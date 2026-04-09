@@ -41,6 +41,7 @@ export const adapterConnectionStates = Object.freeze([
  * @property {import('../core/contracts.js').NormalizedInputEvent[]} normalized
  * @property {AdapterDeviceInfo=} device
  * @property {import('../profiles/definition.js').ControllerProfileDefinition=} profile
+ * @property {import('../core/state.js').ControllerState|null=} controllerState
  * @property {number=} timestamp
  */
 

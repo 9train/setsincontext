@@ -1,4 +1,5 @@
 import { createAdapterInputHub } from './boundary.js';
+import { createControllerScriptRuntime } from '../core/hooks.js';
 import { createRawInputEvent, normalizeRawInputEvent } from '../core/normalization.js';
 import { flx6Profile, matchesFlx6InputDevice } from '../profiles/ddj-flx6.js';
 
@@ -17,6 +18,7 @@ export const WEB_MIDI_ADAPTER_ID = 'generic-web-midi';
  *   getAccess: () => MIDIAccess|null,
  *   getSelectedInput: () => MIDIInput|null,
  *   getSelectedOutput: () => MIDIOutput|null,
+ *   getControllerState: () => import('../core/state.js').ControllerState|null,
  * }} WebMidiAdapter
  */
 
@@ -279,6 +281,8 @@ export function createWebMidiAdapter(options) {
   let deviceInfo = null;
   let stateHandler = null;
   let messageHandler = null;
+  let scriptRuntime = null;
+  let scriptRuntimeKey = '';
 
   function listInputPorts() {
     return toArray(access && access.inputs && access.inputs.values && access.inputs.values());
@@ -296,6 +300,66 @@ export function createWebMidiAdapter(options) {
     ) || null;
     deviceInfo = freezeDeviceInfo(input, output, profile);
     return deviceInfo;
+  }
+
+  function getScriptRuntimeKey(currentProfile) {
+    if (!currentProfile) return '';
+    const info = deviceInfo || {};
+    return [
+      currentProfile.id || '',
+      info.id || '',
+      info.inputName || '',
+      info.outputName || '',
+    ].join('::');
+  }
+
+  function shutdownScriptRuntime() {
+    if (!scriptRuntime) {
+      scriptRuntimeKey = '';
+      return null;
+    }
+
+    let result = null;
+    try {
+      result = scriptRuntime.shutdown();
+    } catch (error) {
+      log('[WebMIDI] script shutdown failed', error);
+    }
+
+    scriptRuntime = null;
+    scriptRuntimeKey = '';
+    return result;
+  }
+
+  function syncScriptRuntime(currentProfile) {
+    if (!currentProfile) {
+      shutdownScriptRuntime();
+      return null;
+    }
+
+    const nextKey = getScriptRuntimeKey(currentProfile);
+    if (scriptRuntime && nextKey && nextKey === scriptRuntimeKey) {
+      return scriptRuntime;
+    }
+
+    shutdownScriptRuntime();
+    scriptRuntime = createControllerScriptRuntime({
+      profile: currentProfile,
+      device: deviceInfo,
+      adapterId: String(opts.id || WEB_MIDI_ADAPTER_ID),
+      transport: 'midi',
+      role: 'host',
+      now,
+    });
+    scriptRuntimeKey = nextKey;
+
+    try {
+      scriptRuntime.init();
+    } catch (error) {
+      log('[WebMIDI] script init failed', error);
+    }
+
+    return scriptRuntime;
   }
 
   function attachInput(nextInput) {
@@ -325,6 +389,7 @@ export function createWebMidiAdapter(options) {
     }
     attachInput(next);
     if (!output) attachOutput(pickOutput(listOutputPorts(), opts.preferredOutput, next && next.name));
+    syncScriptRuntime(profile);
     onStatus(`listening:${next.name}`);
     log('[WebMIDI] Switched to:', next.name);
     return true;
@@ -337,6 +402,7 @@ export function createWebMidiAdapter(options) {
       return false;
     }
     attachOutput(next);
+    syncScriptRuntime(profile);
     log('[WebMIDI] Output set to:', next.name);
     return true;
   }
@@ -362,12 +428,22 @@ export function createWebMidiAdapter(options) {
       sourceId: rawEvent.sourceId,
       timestamp: rawEvent.timestamp,
     });
+    const currentScript = syncScriptRuntime(currentProfile);
+
+    try {
+      if (currentScript) currentScript.handleInput(rawEvent, result && result.events || []);
+    } catch (error) {
+      log('[WebMIDI] script input failed', error);
+    }
 
     inputHub.emit({
       raw: rawEvent,
       normalized: result && result.events || [],
       device: deviceInfo,
       profile: currentProfile,
+      controllerState: currentScript && currentScript.snapshotState
+        ? currentScript.snapshotState()
+        : null,
       timestamp: rawEvent.timestamp,
     });
   }
@@ -441,6 +517,7 @@ export function createWebMidiAdapter(options) {
 
       attachInput(nextInput);
       attachOutput(pickOutput(outputs, opts.preferredOutput, nextInput && nextInput.name));
+      syncScriptRuntime(profile);
       onStatus(`listening:${nextInput.name}`);
       log('[WebMIDI] Listening on:', nextInput.name);
       return deviceInfo;
@@ -466,6 +543,7 @@ export function createWebMidiAdapter(options) {
       profile = null;
       deviceInfo = null;
       stateHandler = null;
+      shutdownScriptRuntime();
 
       onStatus(reason === 'stopped' ? 'stopped' : 'disconnected');
       log('[WebMIDI] Stopped');
@@ -474,11 +552,29 @@ export function createWebMidiAdapter(options) {
       return inputHub.subscribe(callback);
     },
     send(messages) {
-      const queue = Array.isArray(messages) ? messages : [];
-      if (!output || typeof output.send !== 'function' || !queue.length) return false;
+      const queue = Array.isArray(messages) ? messages.slice() : [];
+      const currentScript = syncScriptRuntime(profile);
+      let pending = queue;
+
+      try {
+        const hookResult = currentScript
+          ? currentScript.handleOutput({
+            requestedMessages: queue.slice(),
+            device: deviceInfo,
+            profile,
+          })
+          : null;
+        if (hookResult && Array.isArray(hookResult.messages) && hookResult.messages.length) {
+          pending = pending.concat(hookResult.messages);
+        }
+      } catch (error) {
+        log('[WebMIDI] script output failed', error);
+      }
+
+      if (!output || typeof output.send !== 'function' || !pending.length) return false;
 
       let sent = 0;
-      queue.forEach((message) => {
+      pending.forEach((message) => {
         const bytes = feedbackMessageToMidiBytes(message);
         if (!bytes) return;
         try {
@@ -508,6 +604,11 @@ export function createWebMidiAdapter(options) {
     },
     getSelectedOutput() {
       return output;
+    },
+    getControllerState() {
+      return scriptRuntime && scriptRuntime.snapshotState
+        ? scriptRuntime.snapshotState()
+        : null;
     },
   };
 }

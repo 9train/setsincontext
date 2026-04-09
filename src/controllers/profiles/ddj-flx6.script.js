@@ -173,26 +173,156 @@ export function describeFlx6InputModel() {
   });
 }
 
-export function runFlx6Init() {
+function getHookTimestamp(controllerCtx, fallback) {
+  if (fallback != null) return Number(fallback);
+  if (controllerCtx && typeof controllerCtx.now === 'function') {
+    return Number(controllerCtx.now()) || Date.now();
+  }
+  return Date.now();
+}
+
+function getSessionState(runtimeState) {
+  return runtimeState && runtimeState.temporary && typeof runtimeState.temporary.session === 'object'
+    ? runtimeState.temporary.session
+    : {};
+}
+
+export function init(controllerCtx) {
+  const runtimeState = controllerCtx && controllerCtx.state && typeof controllerCtx.state === 'object'
+    ? controllerCtx.state
+    : createFlx6RuntimeState();
+  const timestamp = getHookTimestamp(controllerCtx);
+
+  setTemporaryState(runtimeState, 'session', {
+    ...getSessionState(runtimeState),
+    profileId: controllerCtx && controllerCtx.profileId || runtimeState.profileId || 'pioneer-ddj-flx6',
+    transport: controllerCtx && controllerCtx.transport || 'midi',
+    inputName: controllerCtx && controllerCtx.device && controllerCtx.device.inputName || null,
+    outputName: controllerCtx && controllerCtx.device && controllerCtx.device.outputName || null,
+    initializedAt: timestamp,
+    shutdownAt: null,
+  }, timestamp);
+
   return {
-    ok: false,
-    executed: false,
-    reason: 'flx6-init-not-wired',
+    ok: true,
+    executed: true,
+    profileId: runtimeState.profileId,
+    state: runtimeState,
+    reason: null,
   };
 }
 
-export function runFlx6Keepalive() {
+export function handleInput(raw, normalized, state, controllerCtx) {
+  const runtimeState = state && typeof state === 'object'
+    ? state
+    : createFlx6RuntimeState({
+      profileId: controllerCtx && controllerCtx.profileId,
+    });
+  const events = Array.isArray(normalized)
+    ? normalized
+    : normalized ? [normalized] : [];
+
+  for (let index = 0; index < events.length; index += 1) {
+    applyFlx6InputState(runtimeState, events[index]);
+  }
+
   return {
-    ok: false,
+    ok: true,
+    executed: events.length > 0,
+    profileId: runtimeState.profileId,
+    state: runtimeState,
+    handled: events.length,
+    reason: events.length ? null : 'no-normalized-events',
+    rawKey: raw && raw.key || null,
+  };
+}
+
+export function handleOutput(appState, controllerState, controllerCtx) {
+  const runtimeState = controllerState && typeof controllerState === 'object'
+    ? controllerState
+    : createFlx6RuntimeState({
+      profileId: controllerCtx && controllerCtx.profileId,
+    });
+  const requestedMessages = Array.isArray(appState && appState.requestedMessages)
+    ? appState.requestedMessages
+    : [];
+  const timestamp = getHookTimestamp(controllerCtx);
+
+  setTemporaryState(runtimeState, 'lastOutput', {
+    requestedCount: requestedMessages.length,
+    generatedCount: 0,
+    timestamp,
+  }, timestamp);
+
+  return {
+    ok: true,
     executed: false,
+    profileId: runtimeState.profileId,
+    state: runtimeState,
+    messages: [],
+    reason: 'flx6-output-not-wired',
+  };
+}
+
+export function shutdown(controllerCtx, controllerState) {
+  const runtimeState = controllerState && typeof controllerState === 'object'
+    ? controllerState
+    : controllerCtx && controllerCtx.state && typeof controllerCtx.state === 'object'
+      ? controllerCtx.state
+      : createFlx6RuntimeState();
+  const timestamp = getHookTimestamp(controllerCtx);
+
+  setTemporaryState(runtimeState, 'session', {
+    ...getSessionState(runtimeState),
+    shutdownAt: timestamp,
+  }, timestamp);
+
+  return {
+    ok: true,
+    executed: true,
+    profileId: runtimeState.profileId,
+    state: runtimeState,
+    reason: null,
+  };
+}
+
+export function runFlx6Init(controllerCtx) {
+  return init(controllerCtx);
+}
+
+export function runFlx6Keepalive(controllerCtx, state) {
+  const runtimeState = state && typeof state === 'object'
+    ? state
+    : controllerCtx && controllerCtx.state && typeof controllerCtx.state === 'object'
+      ? controllerCtx.state
+      : createFlx6RuntimeState();
+  const timestamp = getHookTimestamp(controllerCtx);
+
+  setTemporaryState(runtimeState, 'lastKeepalive', {
+    timestamp,
+  }, timestamp);
+
+  return {
+    ok: true,
+    executed: false,
+    profileId: runtimeState.profileId,
+    state: runtimeState,
     reason: 'flx6-keepalive-not-wired',
   };
 }
 
-export function runFlx6LearnHook() {
+export function runFlx6LearnHook(controllerCtx, state) {
+  const runtimeState = state && typeof state === 'object'
+    ? state
+    : controllerCtx && controllerCtx.state && typeof controllerCtx.state === 'object'
+      ? controllerCtx.state
+      : createFlx6RuntimeState();
+
   return {
-    ok: false,
+    ok: true,
     executed: false,
+    profileId: runtimeState.profileId,
+    state: runtimeState,
     reason: 'flx6-learn-hook-not-wired',
   };
 }
@@ -201,8 +331,8 @@ export const flx6RuntimeHooks = Object.freeze({
   init: Object.freeze({
     id: 'flx6.init',
     modulePath: './ddj-flx6.script.js',
-    exportName: 'runFlx6Init',
-    summary: 'Reserved startup hook for future FLX6-specific setup without moving runtime behavior yet.',
+    exportName: 'init',
+    summary: 'Initializes FLX6 controller-owned state for the live app hook lifecycle.',
   }),
   keepalive: Object.freeze({
     id: 'flx6.keepalive',
@@ -213,8 +343,20 @@ export const flx6RuntimeHooks = Object.freeze({
   input: Object.freeze({
     id: 'flx6.input',
     modulePath: './ddj-flx6.script.js',
-    exportName: 'applyFlx6InputState',
-    summary: 'Updates shared FLX6 controller state for modal input behavior such as pad modes, jog touch, shift, and paired tempo lanes.',
+    exportName: 'handleInput',
+    summary: 'Consumes normalized FLX6 input events and updates shared controller state for modal behavior.',
+  }),
+  output: Object.freeze({
+    id: 'flx6.output',
+    modulePath: './ddj-flx6.script.js',
+    exportName: 'handleOutput',
+    summary: 'Receives app-side output requests and reserves a clean FLX6-specific feedback hook without changing current LED behavior yet.',
+  }),
+  shutdown: Object.freeze({
+    id: 'flx6.shutdown',
+    modulePath: './ddj-flx6.script.js',
+    exportName: 'shutdown',
+    summary: 'Marks the end of one FLX6 controller session so temporary script state can close cleanly.',
   }),
   learn: Object.freeze({
     id: 'flx6.learn',

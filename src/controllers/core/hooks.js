@@ -47,8 +47,7 @@ export const controllerHookPhases = Object.freeze([
  * @property {import('./state.js').ControllerState|null=} state
  * @property {number=} handled
  * @property {string|null=} reason
- * @property {import('../output/feedback.js').OutputMessage[]=} messages
- * @property {import('./contracts.js').NormalizedInputEvent[]=} events
+ * @property {import('../output/feedback.js').FeedbackMessage[]=} messages
  */
 
 /**
@@ -110,7 +109,6 @@ function normalizeHookResult(result, options = {}) {
     handled: options.handled != null ? Number(options.handled) : undefined,
     reason: options.reason || null,
     messages: [],
-    events: [],
   };
 
   if (!result || typeof result !== 'object') return base;
@@ -126,7 +124,6 @@ function normalizeHookResult(result, options = {}) {
     handled: result.handled != null ? Number(result.handled) : base.handled,
     reason: result.reason != null ? String(result.reason) : base.reason,
     messages: Array.isArray(result.messages) ? result.messages.slice() : base.messages,
-    events: Array.isArray(result.events) ? result.events.slice() : base.events,
   };
 }
 
@@ -336,3 +333,4 @@ export function createControllerScriptRuntime(options = {}) {
     },
   };
 }
+

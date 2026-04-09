@@ -189,5 +189,5 @@ test('applyFlx6InputState updates shared FLX6 state without needing a runtime re
 });
 
 test('flx6 profile input hook now points at shared state updates', () => {
-  assert.equal(flx6RuntimeHooks.input.exportName, 'applyFlx6InputState');
+  assert.equal(flx6RuntimeHooks.input.exportName, 'handleInput');
 });
