@@ -7,7 +7,7 @@
 //
 // Public API (unchanged core, plus optional callback):
 //   connectWS('ws://...', onInfo, onStatus)
-//   connectWS({ url, role, room='default', sessionMeta, onInfo, onStatus, onMessage, onSocket, onOpen }) -> client
+//   connectWS({ url, role, room='default', onInfo, onStatus, onMessage }) -> client
 //
 // Returned client exposes:
 //   { url, socket, isAlive(), send(obj), sendMap(arr), close() }
@@ -16,13 +16,10 @@
 // - Host relay now intentionally sends {type:'controller_event', event:{...}}
 //   with normalized controller fields first, while preserving legacy MIDI-like
 //   fields during the transition.
-// - Relay payloads are transport-safe on purpose; local-only branches such as
-//   profile/controllerState/raw/debug snapshots are not serialized over WS.
 // - Viewers dispatch 'flx:remote-map' on map updates
 //   * Back-compat: legacy {type:'map_sync', payload:[...]} (old relays)
 //   * New server:  {type:'map:sync', map:[...]}
-// - Normalizes controller relay events and emits them through the runtime bridge
-//   learn/monitor contract, with legacy globals preserved as aliases
+// - Normalizes controller relay events and calls FLX_LEARN_HOOK / FLX_MONITOR_HOOK
 // - Adds candidate path probing and reconnection backoff
 // - Adds periodic ping frames and optional idle-kill safety timer
 //
@@ -32,8 +29,6 @@
 // - WS protocol ping/pong is handled at protocol level; not visible to JS
 
 import { applyRemoteMap } from './map-bootstrap.js';
-import { hasUsableMappings } from './mapper.js';
-import { getRuntimeApp } from './runtime/app-bridge.js';
 
 const DEFAULT_ROOM = 'default';
 const PATH_CANDIDATES = ['', '/ws', '/socket', '/socket/websocket', '/relay']; // try in order
@@ -55,22 +50,6 @@ function addQuery(u, params){
   return (hasQ ? u.split('?')[0] : u) + '?' + qs.toString();
 }
 
-function normalizeAccessToken(value) {
-  if (value == null) return null;
-  const text = String(value).trim();
-  return text ? text.slice(0, 240) : null;
-}
-
-function pickSessionMeta(input) {
-  const source = input && typeof input === 'object' ? input : {};
-  const sessionMeta = {};
-  ['mode', 'visibility', 'sessionTitle', 'hostName'].forEach((key) => {
-    if (source[key] == null || source[key] === '') return;
-    sessionMeta[key] = String(source[key]);
-  });
-  return sessionMeta;
-}
-
 // Back-compat exported function: supports (url, onInfo, onStatus) and ({...})
 export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {}, onStatusPos = () => {}) {
   // Normalize options
@@ -82,18 +61,7 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
   const onStatus  = opts?.onStatus || (()=>{});
   const role      = (opts?.role || 'viewer').toLowerCase();
   const room      = opts?.room || DEFAULT_ROOM;
-  const sessionMeta = pickSessionMeta(opts?.sessionMeta);
-  const accessToken = normalizeAccessToken(opts?.accessToken);
-  const hostAccessToken = normalizeAccessToken(opts?.hostAccessToken);
-  const accessQuery = role === 'host'
-    ? (hostAccessToken ? { hostAccess: hostAccessToken } : {})
-    : (accessToken ? { access: accessToken } : {});
-  const joinPayload = { type:'join', role, room, ...sessionMeta, ...accessQuery };
-  const wsQuery = { role, room, ...sessionMeta, ...accessQuery };
   const onMessage = opts?.onMessage; // generic message surface
-  const onSocket  = opts?.onSocket;
-  const onOpen    = opts?.onOpen;
-  const runtimeApp = getRuntimeApp();
 
   // Resolve base URL (respect window.WS_URL like original guidance)
   let base = (opts?.url || (typeof window!=='undefined' && window.WS_URL) || '').trim();
@@ -141,21 +109,9 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
     sendMap: (arr)=>{
       if (role !== 'host') return false;
       const mapArr = Array.isArray(arr) ? arr : [];
-      if (!hasUsableMappings(mapArr)) return false;
       try {
         if (client.socket?.readyState === WebSocket.OPEN) {
           client.socket.send(JSON.stringify({ type:'map:set', map: mapArr }));
-          return true;
-        }
-      } catch(e){}
-      return false;
-    },
-
-    probe: (id)=>{
-      if (role !== 'host') return false;
-      try {
-        if (client.socket?.readyState === WebSocket.OPEN) {
-          client.socket.send(JSON.stringify({ type:'probe', id }));
           return true;
         }
       } catch(e){}
@@ -193,23 +149,16 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
     }, IDLE_KILL_MS);
   }
 
-  function wireSocket(ws, url, { helloSent = false } = {}){
+  function wireSocket(ws, url){
     client.socket = ws;
     client.url    = url;
-    try { onSocket && onSocket(ws, client); } catch {}
 
-    let setupComplete = false;
-    function finishOpenSetup(){
-      if (setupComplete) return;
-      setupComplete = true;
-
+    ws.addEventListener('open', ()=>{
       setStatus('connected');
 
-      // Path probing may have already sent hello on the winning socket.
-      if (!helloSent) {
-        try { ws.send(JSON.stringify({ type:'hello', role })); } catch {}
-      }
-      try { ws.send(JSON.stringify(joinPayload)); } catch {}
+      // Send hello/join immediately — server expects this shape
+      try { ws.send(JSON.stringify({ type:'hello', role })); } catch {}
+      try { ws.send(JSON.stringify({ type:'join',  role, room })); } catch {}
 
       // === IMPORTANT: Ask for map immediately (viewer) ===
       // Covers races with host push and ensures initial replay.
@@ -218,12 +167,8 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
       startPing(ws);
       bumpIdleKill(ws);
       reconnectAttempts = 0; // success => reset backoff
-      try { onOpen && onOpen({ socket: ws, client, role, room }); } catch {}
 
-    }
-
-    ws.addEventListener('open', finishOpenSetup);
-    if (ws.readyState === WebSocket.OPEN) finishOpenSetup();
+    });
 
     ws.addEventListener('message', (ev)=>{
       bumpIdleKill(ws);
@@ -266,8 +211,8 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
           debugLog(role === 'viewer' ? 'viewer received event' : 'host received event', norm.__flxDebugKey || '', norm.__flxDebugTarget || '');
         }
         try { onInfo(norm); } catch {}
-        try { runtimeApp?.emitLearnInput(norm); } catch {}
-        try { runtimeApp?.emitMonitorInput(norm); } catch {}
+        try { window.FLX_LEARN_HOOK?.(norm); } catch {}
+        try { window.FLX_MONITOR_HOOK?.(norm); } catch {}
       }
 
       // --- Map handling (viewer) — accept BOTH shapes, then applyRemoteMap() ---
@@ -290,16 +235,12 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
       try { onMessage && onMessage(parsed); } catch {}
     });
 
-    ws.addEventListener('close', (event)=>{
+    ws.addEventListener('close', ()=>{
       clearPing();
       clearIdle();
       client.socket = undefined;
       client.url    = undefined;
       if (closedByUs) return; // don’t reconnect if caller closed explicitly
-      if (event.code === 1008) {
-        setStatus(event.reason || 'access denied');
-        return;
-      }
       setStatus('closed');
 
       // reconnect with capped exponential backoff
@@ -317,7 +258,7 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
 
     const path = PATH_CANDIDATES[index];
     const urlWithPath = base + path;
-    const url = addQuery(urlWithPath, wsQuery);
+    const url = addQuery(urlWithPath, { role, room });
 
     let settled = false;
     let settleTimer = null;
@@ -354,7 +295,7 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
     // If we already have a chosen path, reuse it first
     if (chosen && chosen.url) {
       try {
-        const ws = new WebSocket(addQuery(chosen.url, wsQuery));
+        const ws = new WebSocket(addQuery(chosen.url, { role, room }));
         wireSocket(ws, chosen.url);
         return;
       } catch {}
@@ -370,7 +311,8 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
         return;
       }
       chosen = winner;
-      wireSocket(winner.ws, winner.url, { helloSent: true });
+      wireSocket(winner.ws, winner.url);
+      setStatus('connected');
     });
   }
 
@@ -427,127 +369,25 @@ function extractRelayEvent(p) {
   return raw;
 }
 
-function asFiniteNumber(value) {
-  if (value == null || value === '') return undefined;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : undefined;
-}
-
-function asRelayString(value) {
-  if (value == null) return undefined;
-  const text = String(value).trim();
-  return text ? text : undefined;
-}
-
-function assignIfDefined(target, key, value) {
-  if (value !== undefined) target[key] = value;
-}
-
-function sanitizeRelayContext(context) {
-  if (!context || typeof context !== 'object') return undefined;
-  const out = {};
-  Object.entries(context).forEach(([key, value]) => {
-    if (value == null) return;
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      out[key] = value;
-    }
-  });
-  return Object.keys(out).length ? out : undefined;
-}
-
-function sanitizeRelayRender(render, raw) {
-  const source = render && typeof render === 'object' ? render : null;
-  const out = {};
-  assignIfDefined(out, 'targetId', asRelayString(source && source.targetId || raw && raw.resolvedRenderTarget));
-  assignIfDefined(out, 'truthStatus', asRelayString(source && source.truthStatus || raw && raw.truthStatus));
-  assignIfDefined(out, 'source', asRelayString(source && source.source));
-  const jogVisual = sanitizeRelayJogVisual(source && source.jogVisual);
-  assignIfDefined(out, 'jogVisual', jogVisual);
-  return Object.keys(out).length ? out : undefined;
-}
-
-function sanitizeRelayJogVisual(jogVisual) {
-  if (!jogVisual || typeof jogVisual !== 'object') return undefined;
-  const out = {};
-  const side = asRelayString(jogVisual.side);
-  if (side === 'L' || side === 'R') out.side = side;
-  assignIfDefined(out, 'angle', asFiniteNumber(jogVisual.angle));
-  assignIfDefined(out, 'vel', asFiniteNumber(jogVisual.vel));
-  assignIfDefined(out, 'damping', asFiniteNumber(jogVisual.damping));
-  assignIfDefined(out, 'lane', asRelayString(jogVisual.lane));
-  assignIfDefined(out, 'motionMode', asRelayString(jogVisual.motionMode));
-  if (typeof jogVisual.touchActive === 'boolean') out.touchActive = jogVisual.touchActive;
-  assignIfDefined(out, 'touchLane', asRelayString(jogVisual.touchLane));
-  assignIfDefined(out, 'authoredAt', asFiniteNumber(jogVisual.authoredAt));
-  assignIfDefined(out, 'frameMs', asFiniteNumber(jogVisual.frameMs));
-  return Object.keys(out).length ? out : undefined;
-}
-
-function sanitizeRelayBoardCompat(boardCompat) {
-  if (!boardCompat || typeof boardCompat !== 'object') return undefined;
-  const out = {};
-  assignIfDefined(out, 'targetId', asRelayString(boardCompat.targetId));
-  assignIfDefined(out, 'canonicalTarget', asRelayString(boardCompat.canonicalTarget));
-  assignIfDefined(out, 'mappingId', asRelayString(boardCompat.mappingId));
-  assignIfDefined(out, 'context', sanitizeRelayContext(boardCompat.context));
-  assignIfDefined(out, 'profileId', asRelayString(boardCompat.profileId));
-  assignIfDefined(out, 'source', asRelayString(boardCompat.source));
-  assignIfDefined(out, 'reason', asRelayString(boardCompat.reason));
-  return Object.keys(out).length ? out : undefined;
-}
-
 function buildRelayEvent(info) {
   const raw = normalizeInfo(info);
   if (!raw || typeof raw !== 'object') return null;
 
-  const interaction = asRelayString(raw.interaction || raw.type || raw.mtype);
-  const normalizedInteraction = interaction ? interaction.toLowerCase() : undefined;
-  const type = normalizedInteraction || asRelayString(raw.type);
-  const channel = asFiniteNumber(raw.ch ?? raw.channel ?? raw.chan ?? raw.port);
-  const d1 = asFiniteNumber(raw.d1 ?? raw.controller ?? raw.note ?? raw.code);
-  const d2 = asFiniteNumber(raw.d2 ?? raw.value ?? raw.velocity ?? raw.data2);
-  const value = asFiniteNumber(raw.value ?? raw.d2);
-  const mapped = raw.mapped != null ? !!raw.mapped : !!(raw.canonicalTarget || raw.mappingId);
-  const timestamp = asFiniteNumber(raw.timestamp) ?? Date.now();
-  const relay = {
+  const interaction = String(raw.interaction || raw.type || '').toLowerCase() || null;
+  const timestamp = raw.timestamp != null ? Number(raw.timestamp) : Date.now();
+  const mapped = raw.mapped != null ? !!raw.mapped : !!raw.canonicalTarget;
+
+  return {
+    ...raw,
     eventType: typeof raw.eventType === 'string' ? raw.eventType : 'normalized_input',
+    profileId: raw.profileId ?? null,
+    canonicalTarget: raw.canonicalTarget ?? null,
+    mappingId: raw.mappingId ?? null,
+    context: raw.context ?? null,
     mapped,
+    interaction,
     timestamp,
   };
-
-  assignIfDefined(relay, 'transport', asRelayString(raw.transport || raw.device && raw.device.transport));
-  assignIfDefined(relay, 'sourceId', asRelayString(raw.sourceId || raw.device && raw.device.id));
-  assignIfDefined(relay, 'deviceName', asRelayString(raw.deviceName || raw.device && (raw.device.inputName || raw.device.name)));
-  assignIfDefined(relay, 'profileId', asRelayString(raw.profileId || raw.device && raw.device.profileId || raw.profile && raw.profile.id));
-  assignIfDefined(relay, 'rawTarget', asRelayString(raw.rawTarget));
-  assignIfDefined(relay, 'valueShape', asRelayString(raw.valueShape));
-  assignIfDefined(relay, 'canonicalTarget', asRelayString(raw.canonicalTarget));
-  assignIfDefined(relay, 'mappingId', asRelayString(raw.mappingId));
-  assignIfDefined(relay, 'context', sanitizeRelayContext(raw.context));
-  assignIfDefined(relay, 'truthStatus', asRelayString(raw.truthStatus || raw.render && raw.render.truthStatus));
-  assignIfDefined(relay, 'render', sanitizeRelayRender(raw.render, raw));
-  assignIfDefined(relay, 'boardCompat', sanitizeRelayBoardCompat(raw.boardCompat));
-  assignIfDefined(relay, 'interaction', normalizedInteraction);
-  assignIfDefined(relay, 'type', type ? type.toLowerCase() : undefined);
-  assignIfDefined(relay, 'ch', channel);
-  assignIfDefined(relay, 'd1', d1);
-  assignIfDefined(relay, 'd2', d2);
-  assignIfDefined(relay, 'value', value);
-  assignIfDefined(relay, 'compatValue', asFiniteNumber(raw.compatValue));
-  assignIfDefined(relay, 'semanticValue', asFiniteNumber(raw.semanticValue));
-
-  if ((relay.type || relay.interaction) === 'cc') {
-    assignIfDefined(relay, 'controller', asFiniteNumber(raw.controller ?? relay.d1));
-  }
-
-  if (raw.__flxDebug === true) {
-    relay.__flxDebug = true;
-    assignIfDefined(relay, '__flxDebugSource', asRelayString(raw.__flxDebugSource));
-    assignIfDefined(relay, '__flxDebugTarget', asRelayString(raw.__flxDebugTarget));
-    assignIfDefined(relay, '__flxDebugKey', asRelayString(raw.__flxDebugKey));
-  }
-
-  return relay;
 }
 
 // Brings different incoming MIDI shapes to a single {type,ch,d1,d2,...}

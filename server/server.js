@@ -22,7 +22,6 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import { create as createHID } from './hid.js';
-import { createSessionRegistry } from './session-registry.js';
 
 // ---- __filename / __dirname equivalents in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -62,8 +61,6 @@ const LOCAL_DEV_ALLOWED = process.env.NODE_ENV === 'production'
       `http://127.0.0.1:${PORT}`,
       `http://0.0.0.0:${PORT}`,
       `http://[::1]:${PORT}`,
-      // Allow the default local Vite origin used by the website doorway during development.
-      'http://localhost:5173',
     ];
 
 // HARD-CODED entries — replace with your real domains if desired.
@@ -85,188 +82,9 @@ const ALLOWED_ORIGINS = new Set([
 // ---- Static web server
 const app = express();
 const ROOT_DIR = path.join(__dirname, '..');
-const sessionRegistry = createSessionRegistry();
-const SESSION_META_KEYS = ['mode', 'visibility', 'sessionTitle', 'hostName'];
-const PUBLIC_SESSION_VISIBILITY = 'public';
 
 function sendRootFile(name) {
   return (_req, res) => res.sendFile(path.join(ROOT_DIR, name));
-}
-
-function pickSessionMetadata(source) {
-  if (!source || typeof source !== 'object') return {};
-  const metadata = {};
-  for (const key of SESSION_META_KEYS) {
-    if (source[key] == null || source[key] === '') continue;
-    metadata[key] = source[key];
-  }
-  if (source.title != null && source.title !== '' && metadata.sessionTitle == null) {
-    metadata.sessionTitle = source.title;
-  }
-  return metadata;
-}
-
-function mergeSessionMetadata(...sources) {
-  return Object.assign({}, ...sources.map(pickSessionMetadata));
-}
-
-function normalizeAccessToken(value) {
-  if (value == null) return null;
-  const text = String(value).trim();
-  return text ? text.slice(0, 240) : null;
-}
-
-function getForwardedHeaderValue(req, headerName) {
-  const value = req.get(headerName);
-  if (value == null || value === '') return null;
-  const first = String(value).split(',')[0]?.trim();
-  return first || null;
-}
-
-function resolveRequestProtocol(req) {
-  const forwardedProto = getForwardedHeaderValue(req, 'x-forwarded-proto');
-  if (forwardedProto === 'https') return 'https';
-  if (forwardedProto === 'http') return 'http';
-  return req.secure ? 'https' : 'http';
-}
-
-function resolveRequestHost(req) {
-  return getForwardedHeaderValue(req, 'x-forwarded-host') || req.get('host') || null;
-}
-
-function buildViewerWSURL(req) {
-  const host = resolveRequestHost(req);
-  if (!host) return null;
-
-  try {
-    const url = new URL(`${resolveRequestProtocol(req)}://${host}`);
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    if (!SINGLE_PORT) {
-      url.port = String(WSPORT);
-    }
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
-function buildViewerJoinUrlPath(req, room, { accessToken } = {}) {
-  const params = new URLSearchParams();
-  if (room) {
-    params.set('room', String(room));
-  }
-
-  const wsURL = buildViewerWSURL(req);
-  if (wsURL) {
-    params.set('ws', wsURL);
-  }
-
-  const normalizedAccessToken = normalizeAccessToken(accessToken);
-  if (normalizedAccessToken) {
-    params.set('access', normalizedAccessToken);
-  }
-
-  return `/viewer.html?${params.toString()}`;
-}
-
-function createResolvedSessionPayload(req, session, { accessToken } = {}) {
-  return {
-    ok: true,
-    room: session.room,
-    mode: session.mode,
-    visibility: session.visibility,
-    title: session.title || '',
-    hostName: session.hostName || '',
-    status: session.status,
-    viewerCount: Number.isFinite(session.viewerCount) ? session.viewerCount : 0,
-    hostCount: Number.isFinite(session.hostCount) ? session.hostCount : 0,
-    adHoc: !!session.adHoc,
-    joinUrlPath: buildViewerJoinUrlPath(req, session.room, { accessToken }),
-  };
-}
-
-function createPrivateInvitePayload(req, session, accessToken) {
-  return {
-    ok: true,
-    room: session.room,
-    visibility: session.visibility,
-    title: session.title || '',
-    hostName: session.hostName || '',
-    joinUrlPath: buildViewerJoinUrlPath(req, session.room, { accessToken }),
-  };
-}
-
-function createSessionAccessErrorPayload({ code, key, room } = {}) {
-  if (code === 'invite_required') {
-    return {
-      status: 403,
-      payload: {
-        ok: false,
-        error: 'private invite required',
-        code: 'invite_required',
-        requiresAccess: true,
-        ...(key ? { key } : {}),
-        ...(room ? { room } : {}),
-      },
-      closeReason: 'private invite required',
-    };
-  }
-
-  if (code === 'invalid_access') {
-    return {
-      status: 403,
-      payload: {
-        ok: false,
-        error: 'invalid private invite',
-        code: 'invalid_access',
-        requiresAccess: true,
-        ...(key ? { key } : {}),
-        ...(room ? { room } : {}),
-      },
-      closeReason: 'invalid private invite',
-    };
-  }
-
-  if (code === 'host_access_required') {
-    return {
-      status: 403,
-      payload: {
-        ok: false,
-        error: 'host access required',
-        code: 'host_access_required',
-        ...(room ? { room } : {}),
-      },
-      closeReason: 'host access required',
-    };
-  }
-
-  if (code === 'not_private') {
-    return {
-      status: 409,
-      payload: {
-        ok: false,
-        error: 'session is public',
-        code: 'not_private',
-        ...(room ? { room } : {}),
-      },
-      closeReason: 'session is public',
-    };
-  }
-
-  return {
-    status: 404,
-    payload: {
-      ok: false,
-      error: 'session not found',
-      ...(key ? { key } : {}),
-      ...(room ? { room } : {}),
-    },
-    closeReason: 'session not found',
-  };
-}
-
-function isPubliclyListableSession(session) {
-  return session?.visibility === PUBLIC_SESSION_VISIBILITY;
 }
 
 // ---- Canonical app entrypoints
@@ -289,9 +107,6 @@ app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 // Also serve a relative ./public for local/dev convenience
 app.use(express.static('public', { index: false }));
 
-// Serve optional controller config artifacts without exposing unrelated repo roots.
-app.use('/maps', express.static(path.join(__dirname, '..', 'maps'), { index: false }));
-
 // Serve /src so ES module imports like /src/board.js load
 app.use('/src', express.static(path.join(__dirname, '..', 'src')));
 
@@ -304,121 +119,14 @@ app.use('/assets', express.static(path.join(__dirname, '..', 'assets')));
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 app.get('/health',  (_req, res) => res.status(200).send('ok'));
 
-app.get('/api/sessions', (_req, res) => {
-  const sessions = sessionRegistry.listSessions().filter(isPubliclyListableSession);
-  res.status(200).json({ sessions });
-});
-
-app.get('/api/sessions/resolve', (req, res) => {
-  const key = typeof req.query.key === 'string' ? req.query.key.trim() : '';
-  const accessToken = normalizeAccessToken(req.query.access);
-  if (!key) {
-    res.status(400).json({ ok: false, error: 'missing session key' });
-    return;
-  }
-
-  const result = sessionRegistry.resolveSessionAccess({ key, accessToken });
-  if (!result.ok) {
-    const accessError = createSessionAccessErrorPayload({ code: result.code, key });
-    res.status(accessError.status).json(accessError.payload);
-    return;
-  }
-
-  res.status(200).json(createResolvedSessionPayload(req, result.session, { accessToken: result.accessToken }));
-});
-
-app.get('/api/sessions/:room/invite', (req, res) => {
-  const room = req.params.room;
-  const hostAccessToken = normalizeAccessToken(req.query.hostAccess);
-  const result = sessionRegistry.getPrivateInvite({ room, hostAccessToken });
-
-  if (!result.ok) {
-    const accessError = createSessionAccessErrorPayload({ code: result.code, room });
-    res.status(accessError.status).json(accessError.payload);
-    return;
-  }
-
-  res.status(200).json(createPrivateInvitePayload(req, result.session, result.accessToken));
-});
-
-app.get('/api/sessions/:room', (req, res) => {
-  const room = req.params.room;
-  const accessToken = normalizeAccessToken(req.query.access);
-  const result = sessionRegistry.resolveSessionAccess({ key: room, accessToken });
-
-  if (!result.ok) {
-    const accessError = createSessionAccessErrorPayload({ code: result.code, room });
-    res.status(accessError.status).json(accessError.payload);
-    return;
-  }
-  res.status(200).json({ session: result.session });
-});
-
 // Optional: silence favicon errors
 app.get('/favicon.ico', (_req, res) => res.sendStatus(204));
 
 const server = http.createServer(app);
 
-function errorSummary(error) {
-  if (!error) return {};
-  return {
-    error: error.message || String(error),
-    code: error.code || null,
-  };
-}
-
-function logRuntime(level, event, details = {}) {
-  try {
-    console[level](`[WS runtime] ${JSON.stringify({ event, ...details })}`);
-  } catch {}
-}
-
-function logSocket(level, event, ws, details = {}) {
-  logRuntime(level, event, {
-    id: ws?.id || null,
-    role: ws?.role || null,
-    room: ws?.room || null,
-    joined: !!ws?.joined,
-    origin: ws?.origin || null,
-    ...details,
-  });
-}
-
-function safeTerminate(ws, reason) {
-  logSocket('warn', 'socket-terminate', ws, { reason });
-  try { ws.terminate(); } catch (error) {
-    logSocket('warn', 'socket-terminate-failed', ws, { reason, ...errorSummary(error) });
-  }
-}
-
-function safeClose(ws, code, reason) {
-  try { ws.close(code, reason); } catch (error) {
-    logSocket('warn', 'socket-close-failed', ws, { code, reason, ...errorSummary(error) });
-  }
-}
-
 // --- Listen using process.env.PORT and bind to 0.0.0.0
 server.listen(PORT, HOST, () => {
   console.log(`[HTTP] Listening on http://${HOST}:${PORT}  (SINGLE_PORT=${SINGLE_PORT ? 'on' : 'off'})`);
-});
-server.on('error', (error) => {
-  logRuntime('error', 'http-server-error', {
-    host: HOST,
-    port: PORT,
-    singlePort: SINGLE_PORT,
-    ...errorSummary(error),
-  });
-});
-server.on('clientError', (error, socket) => {
-  logRuntime('warn', 'http-client-error', {
-    host: HOST,
-    port: PORT,
-    ...errorSummary(error),
-  });
-  try {
-    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
-    else socket.destroy();
-  } catch {}
 });
 
 // ---- WebSocket server
@@ -431,44 +139,18 @@ if (SINGLE_PORT) {
     console.log(`[WS] Listening on ws://${HOST}:${WSPORT} (separate port)`);
   });
 }
-wss.on('error', (error) => {
-  logRuntime('error', 'ws-server-error', {
-    host: HOST,
-    port: WSPORT,
-    singlePort: SINGLE_PORT,
-    ...errorSummary(error),
-  });
-});
 
 // --- Global broadcast helper (original; used by HID/MIDI bridge)
 function broadcast(obj) {
-  let msg;
-  try { msg = JSON.stringify(obj); } catch (error) {
-    logRuntime('warn', 'broadcast-serialize-failed', {
-      type: obj?.type || null,
-      ...errorSummary(error),
-    });
-    return;
-  }
+  const msg = JSON.stringify(obj);
   for (const client of wss.clients) {
-    if (client.readyState === WebSocket.OPEN) {
-      try { client.send(msg); } catch {}
-    }
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
   }
 }
 
 // === Rooms with presence + lastMap (+ lastKey) ==============================
 // roomName -> { hosts:Set<WebSocket>, viewers:Set<WebSocket>, lastMap:Array|null, lastKey:string|null }
 const rooms = new Map();
-const AUTO_JOIN_TYPES = new Set([
-  'map:get',
-  'map:set',
-  'map:ensure',
-  'midi',
-  'controller_event',
-  'probe',
-  'probe:ack',
-]);
 
 function getRoom(roomName) {
   if (!rooms.has(roomName)) {
@@ -480,16 +162,6 @@ function getRoom(roomName) {
     });
   }
   return rooms.get(roomName);
-}
-
-function syncSessionForRoom(roomName) {
-  if (!roomName) return null;
-  const r = getRoom(roomName);
-  return sessionRegistry.syncRoomState({
-    room: roomName,
-    hosts: r.hosts.size,
-    viewers: r.viewers.size,
-  });
 }
 
 // Presence broadcast
@@ -506,110 +178,6 @@ function broadcastPresence(roomName) {
   }
 }
 
-function denySocketJoin(ws, room, code) {
-  const accessError = createSessionAccessErrorPayload({ code, room });
-  send(ws, {
-    type: 'access:denied',
-    room,
-    code: accessError.payload.code || 'session_not_found',
-    error: accessError.payload.error,
-  });
-  logSocket('warn', 'socket-access-denied', ws, {
-    room,
-    accessCode: code,
-  });
-  safeClose(ws, 1008, accessError.closeReason);
-}
-
-function joinSocket(ws, { role, room, metadata } = {}) {
-  const nextRole = String(role || ws.role || 'viewer').toLowerCase();
-  const nextRoom = room || ws.room || 'default';
-  const nextMetadata = mergeSessionMetadata(ws.sessionMeta, metadata);
-  const nextAccessToken = normalizeAccessToken(metadata?.access ?? ws.accessToken);
-  const nextHostAccessToken = normalizeAccessToken(metadata?.hostAccess ?? ws.hostAccessToken);
-  const prevRoom = ws.joined ? ws.room : null;
-  const prevRole = ws.role;
-  const sameMembership = ws.joined && prevRoom === nextRoom && prevRole === nextRole;
-  const authorization = sessionRegistry.authorizeSessionJoin({
-    room: nextRoom,
-    role: nextRole,
-    accessToken: nextAccessToken,
-    hostAccessToken: nextHostAccessToken,
-  });
-
-  if (!authorization.ok) {
-    ws.accessToken = nextAccessToken;
-    ws.hostAccessToken = nextHostAccessToken;
-    denySocketJoin(ws, nextRoom, authorization.code);
-    return null;
-  }
-
-  if (!sameMembership && ws.joined) {
-    const prev = getRoom(prevRoom);
-    prev.hosts.delete(ws);
-    prev.viewers.delete(ws);
-    syncSessionForRoom(prevRoom);
-  }
-
-  ws.role = nextRole;
-  ws.room = nextRoom;
-  ws.sessionMeta = nextMetadata;
-  ws.accessToken = nextAccessToken;
-  ws.hostAccessToken = nextHostAccessToken;
-
-  const r = getRoom(nextRoom);
-
-  if (!sameMembership) {
-    if (ws.role === 'host') r.hosts.add(ws); else r.viewers.add(ws);
-    ws.joined = true;
-
-    send(ws, { type: 'presence', room: ws.room, hosts: r.hosts.size, viewers: r.viewers.size });
-    if (prevRoom && prevRoom !== nextRoom) broadcastPresence(prevRoom);
-    broadcastPresence(ws.room);
-
-    if (ws.role === 'viewer' && r.lastMap && Array.isArray(r.lastMap) && r.lastMap.length) {
-      send(ws, { type: 'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey });
-    }
-  }
-
-  sessionRegistry.recordJoin({
-    room: nextRoom,
-    role: nextRole,
-    hosts: r.hosts.size,
-    viewers: r.viewers.size,
-    metadata: nextMetadata,
-    hostAccessToken: nextHostAccessToken,
-  });
-
-  logSocket('log', 'socket-join', ws, {
-    prevRoom,
-    prevRole,
-    sameMembership,
-  });
-
-  return getRoom(ws.room);
-}
-
-function ensureJoinedForMessage(ws, msg) {
-  if (ws.joined || !AUTO_JOIN_TYPES.has(msg?.type)) return false;
-
-  let nextRole = ws.role || 'viewer';
-  if (msg.type === 'map:set' || msg.type === 'map:ensure' || msg.type === 'controller_event' || msg.type === 'probe') {
-    nextRole = 'host';
-  } else if (msg.type === 'probe:ack') {
-    nextRole = 'viewer';
-  }
-
-  const joinedRoom = joinSocket(ws, {
-    role: nextRole,
-    room: msg.room || ws.room || 'default',
-    metadata: msg,
-  });
-  if (!joinedRoom) return false;
-  logSocket('log', 'socket-auto-join', ws, { trigger: msg.type });
-  return true;
-}
-
 // Keep viewer-scoped helper used by host → viewers info relay for legacy payloads.
 function broadcastToViewers_wrapped(room, payload, exceptWs) {
   // This preserves the original "wrap as {type:'info', payload}" behavior.
@@ -618,7 +186,6 @@ function broadcastToViewers_wrapped(room, payload, exceptWs) {
     if (
       client !== exceptWs &&
       client.readyState === WebSocket.OPEN &&
-      client.joined &&
       client.room === room &&
       client.role === 'viewer'
     ) {
@@ -634,7 +201,6 @@ function broadcastToViewers_raw(room, obj, exceptWs) {
     if (
       client !== exceptWs &&
       client.readyState === WebSocket.OPEN &&
-      client.joined &&
       client.room === room &&
       client.role === 'viewer'
     ) {
@@ -645,27 +211,7 @@ function broadcastToViewers_raw(room, obj, exceptWs) {
 
 // Convenience send
 function send(ws, obj) {
-  try {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
-  } catch (error) {
-    logSocket('warn', 'socket-send-failed', ws, {
-      type: obj?.type || null,
-      ...errorSummary(error),
-    });
-  }
-}
-
-function cleanupProbeCollectorsForSocket(ws, reason) {
-  let removed = 0;
-  for (const [key, col] of probeCollectors) {
-    if (col?.host === ws) {
-      probeCollectors.delete(key);
-      removed += 1;
-    }
-  }
-  if (removed > 0) {
-    logSocket('log', 'probe-collector-cleanup', ws, { reason, removed });
-  }
+  try { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); } catch {}
 }
 
 // === NEW (SOP): Map persistence helpers =====================================
@@ -725,21 +271,19 @@ await loadMapsFromDisk();
 
 // === WS connection handling ==================================================
 wss.on('connection', (ws, req) => {
-  ws.origin = req?.headers?.origin || null;
-
   // Allow-list guard — merged with allow-list and 1008 close
   if (HAS_ALLOWLIST) {
     const origin = req?.headers?.origin || '';
     if (!ALLOWED_ORIGINS.has(origin)) {
-      logSocket('warn', 'socket-blocked-origin', ws, { origin });
-      safeClose(ws, 1008, 'origin not allowed');
+      console.warn('[WS] blocked origin', origin);
+      try { ws.close(1008, 'origin not allowed'); } catch {}
       return;
     }
   } else if (process.env.NODE_ENV === 'production' && process.env.ALLOWED_ORIGIN) {
     const origin = req?.headers?.origin;
     if (origin !== process.env.ALLOWED_ORIGIN) {
-      logSocket('warn', 'socket-blocked-origin', ws, { origin, legacyCheck: true });
-      safeClose(ws, 1008, 'origin not allowed');
+      console.warn('[WS] blocked origin (legacy check)', origin);
+      try { ws.close(1008, 'origin not allowed'); } catch {}
       return;
     }
   }
@@ -749,202 +293,187 @@ wss.on('connection', (ws, req) => {
     const parsed = new URL(req.url, 'http://localhost');
     ws.role = (parsed.searchParams.get('role') || 'viewer').toLowerCase();
     ws.room = parsed.searchParams.get('room') || 'default';
-    ws.sessionMeta = pickSessionMetadata(Object.fromEntries(parsed.searchParams.entries()));
-    ws.accessToken = normalizeAccessToken(parsed.searchParams.get('access'));
-    ws.hostAccessToken = normalizeAccessToken(parsed.searchParams.get('hostAccess'));
   } catch {
     ws.role = 'viewer';
     ws.room = 'default';
-    ws.sessionMeta = {};
-    ws.accessToken = null;
-    ws.hostAccessToken = null;
   }
 
   // NEW: per-connection id (used for probe ack dedupe)
   ws.id = `c_${Math.random().toString(36).slice(2, 10)}`;
-  ws.joined = false;
-  logSocket('log', 'socket-open', ws, {
-    url: req?.url || null,
-  });
 
   // Heartbeat: mark alive and refresh on pong
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
-  ws.on('error', (error) => {
-    logSocket('warn', 'socket-error', ws, errorSummary(error));
-  });
 
   // Initial hello back (handshake)
   send(ws, { type: 'hello', ts: Date.now() });
 
+  // Place socket into room sets immediately (so presence + map:get works pre-join)
+  const r0 = getRoom(ws.room);
+  if (ws.role === 'host') r0.hosts.add(ws); else r0.viewers.add(ws);
+
+  // Send presence snapshot
+  send(ws, { type: 'presence', room: ws.room, hosts: r0.hosts.size, viewers: r0.viewers.size });
+
+  // If viewer joins and we have a map, send it immediately
+  if (ws.role === 'viewer' && r0.lastMap && Array.isArray(r0.lastMap) && r0.lastMap.length) {
+    console.log(`[MAP] replay to new viewer id=${ws.id ?? 'n/a'} room="${ws.room}" entries=${r0.lastMap.length}`);
+    send(ws, { type: 'map:sync', room: ws.room, map: r0.lastMap, key: r0.lastKey });
+  }
+
+  // Notify room about updated presence
+  broadcastPresence(ws.room);
+
   ws.on('message', (buf) => {
     let msg = null;
-    try {
-      msg = JSON.parse(buf.toString());
-    } catch (error) {
-      logSocket('warn', 'bad-frame', ws, {
-        size: buf?.length ?? null,
-        ...errorSummary(error),
-      });
-      return;
-    }
+    try { msg = JSON.parse(buf.toString()); } catch {}
     if (!msg) return;
 
-    try {
-      // Lightweight handshake support (kept)
-      if (msg.type === 'hello') {
-        if (msg.role) ws.role = String(msg.role).toLowerCase();
-        if (msg.room) ws.room = msg.room;
-        ws.sessionMeta = mergeSessionMetadata(ws.sessionMeta, msg);
-        if ('access' in msg) ws.accessToken = normalizeAccessToken(msg.access);
-        if ('hostAccess' in msg) ws.hostAccessToken = normalizeAccessToken(msg.hostAccess);
-        return;
+    // Lightweight handshake support (kept)
+    if (msg.type === 'hello' && msg.role) {
+      ws.role = String(msg.role).toLowerCase();
+      return;
+    }
+
+    // Room join / role update
+    if (msg.type === 'join' || msg.type === 'hello') {
+      const nextRole = msg.role ? String(msg.role).toLowerCase() : ws.role;
+      const nextRoom = msg.room || ws.room || 'default';
+
+      // Remove from old sets
+      const prev = getRoom(ws.room);
+      prev.hosts.delete(ws);
+      prev.viewers.delete(ws);
+
+      // Update role/room
+      ws.role = nextRole;
+      ws.room = nextRoom;
+
+      // Add to new sets
+      const r = getRoom(ws.room);
+      if (ws.role === 'host') r.hosts.add(ws); else r.viewers.add(ws);
+
+      // Send presence snapshot and broadcast
+      send(ws, { type: 'presence', room: ws.room, hosts: r.hosts.size, viewers: r.viewers.size });
+      broadcastPresence(ws.room);
+
+      // If the room already has a map, sync it to the joining client
+      if (r.lastMap && Array.isArray(r.lastMap) && r.lastMap.length) {
+        send(ws, { type: 'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey });
+      }
+      return;
+    }
+
+    // App-level ping (protocol ping/pong preferred, kept for compatibility)
+    if (msg.type === 'ping') { return; }
+
+    // === Map set/ensure/get/sync ============================================
+    // Host sets/ensures map for room
+    // {type:'map:set', map:[...], key?:string}
+    // {type:'map:ensure', map:[...], key:string}
+    if (ws.role === 'host' && (msg.type === 'map:set' || msg.type === 'map:ensure') && Array.isArray(msg.map)) {
+      const r = getRoom(ws.room);
+      const inKey = msg.key || keyOf(msg.map);
+      // Only update/broadcast if different
+      if (r.lastKey !== inKey) {
+        r.lastMap = msg.map;
+        r.lastKey = inKey;
+        // broadcast to viewers only (RAW, not wrapped)
+        broadcastToViewers_raw(ws.room, { type:'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey }, ws);
+        scheduleSave(); // optional: persist to disk
+        console.log(`[MAP] ${msg.type} room="${ws.room}" entries=${msg.map.length}`);
+      }
+      // ack back to host so you know the server saw it
+      send(ws, { type:'map:ack', room: ws.room, key: r.lastKey, viewers: r.viewers.size });
+      return;
+    }
+
+    // Anyone can ask server for current map
+    // {type:'map:get'}
+    if (msg.type === 'map:get' && ws.room) {
+      const r = getRoom(ws.room);
+      if (r.lastMap && Array.isArray(r.lastMap) && r.lastMap.length) {
+        send(ws, { type:'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey });
+      } else {
+        send(ws, { type:'map:empty', room: ws.room });
+      }
+      return;
+    }
+
+    // === NEW (SOP): Probe fan-out and summary ================================
+    // host -> server: {type:'probe', id}
+    if (ws.role === 'host' && msg.type === 'probe' && msg.id) {
+      const r = getRoom(ws.room);
+      const key = `${ws.room}:${msg.id}`;
+      const col = { acks: new Set(), host: ws };
+      probeCollectors.set(key, col);
+
+      // Fan out to viewers in the room
+      for (const v of r.viewers) {
+        send(v, { type:'probe', id: msg.id, room: ws.room });
       }
 
-      // Room join / role update
-      if (msg.type === 'join') {
-        joinSocket(ws, {
-          role: msg.role ? String(msg.role).toLowerCase() : ws.role,
-          room: msg.room || ws.room || 'default',
-          metadata: msg,
+      // After 800ms, summarize back to the host and clear
+      setTimeout(() => {
+        const done = probeCollectors.get(key);
+        if (!done) return;
+        send(ws, {
+          type: 'probe:summary',
+          id: msg.id,
+          room: ws.room,
+          count: done.acks.size,
+          totalViewers: r.viewers.size
         });
-        return;
+        probeCollectors.delete(key);
+      }, 800);
+      return;
+    }
+
+    // viewer -> server: {type:'probe:ack', id, viewerId?}
+    if (ws.role === 'viewer' && msg.type === 'probe:ack' && msg.id) {
+      const key = `${ws.room}:${msg.id}`;
+      const col = probeCollectors.get(key);
+      if (col) {
+        // Use ws.id if available; otherwise generate a short token
+        const vid = ws.id || `v${Math.random().toString(36).slice(2,7)}`;
+        col.acks.add(vid);
       }
+      return;
+    }
 
-      // App-level ping (protocol ping/pong preferred, kept for compatibility)
-      if (msg.type === 'ping') { return; }
-
-      ensureJoinedForMessage(ws, msg);
-
-      // === Map set/ensure/get/sync ============================================
-      // Host sets/ensures map for room
-      // {type:'map:set', map:[...], key?:string}
-      // {type:'map:ensure', map:[...], key:string}
-      if (ws.role === 'host' && (msg.type === 'map:set' || msg.type === 'map:ensure') && Array.isArray(msg.map)) {
-        const r = getRoom(ws.room);
-        const inKey = msg.key || keyOf(msg.map);
-        // Only update/broadcast if different
-        if (r.lastKey !== inKey) {
-          r.lastMap = msg.map;
-          r.lastKey = inKey;
-          // broadcast to viewers only (RAW, not wrapped)
-          broadcastToViewers_raw(ws.room, { type:'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey }, ws);
-          scheduleSave(); // optional: persist to disk
-          console.log(`[MAP] ${msg.type} room="${ws.room}" entries=${msg.map.length}`);
-        }
-        // ack back to host so you know the server saw it
-        send(ws, { type:'map:ack', room: ws.room, key: r.lastKey, viewers: r.viewers.size });
-        return;
+    // === Room-scoped MIDI relay (unchanged feature)
+    // Expect: { type:'midi', mtype:'noteon'|'noteoff'|'cc', ch, ... }
+    // Relay to all clients in the same room EXCEPT the sender.
+    if (msg.type === 'midi' && ws.room) {
+      const r = getRoom(ws.room);
+      const packet = JSON.stringify({ ...msg, room: ws.room });
+      for (const s of [...r.hosts, ...r.viewers]) {
+        if (s !== ws && s.readyState === WebSocket.OPEN) { try { s.send(packet); } catch {} }
       }
+      return;
+    }
 
-      // Anyone can ask server for current map
-      // {type:'map:get'}
-      if (msg.type === 'map:get' && ws.room) {
-        const r = getRoom(ws.room);
-        if (r.lastMap && Array.isArray(r.lastMap) && r.lastMap.length) {
-          send(ws, { type:'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey });
-        } else {
-          send(ws, { type:'map:empty', room: ws.room });
-        }
-        return;
-      }
+    // === Normalized host→viewer relay
+    // New controller events pass through in their explicit relay shape so viewers
+    // can consume canonical fields directly.
+    if (ws.role === 'host' && msg.type === 'controller_event' && msg.event && typeof msg.event === 'object') {
+      broadcastToViewers_raw(ws.room, { type: 'controller_event', room: ws.room, event: msg.event }, ws);
+      return;
+    }
 
-      // === NEW (SOP): Probe fan-out and summary ================================
-      // host -> server: {type:'probe', id}
-      if (ws.role === 'host' && msg.type === 'probe' && msg.id) {
-        const r = getRoom(ws.room);
-        const key = `${ws.room}:${msg.id}`;
-        const col = { acks: new Set(), host: ws };
-        probeCollectors.set(key, col);
-
-        // Fan out to viewers in the room
-        for (const v of r.viewers) {
-          send(v, { type:'probe', id: msg.id, room: ws.room });
-        }
-
-        // After 800ms, summarize back to the host and clear
-        setTimeout(() => {
-          const done = probeCollectors.get(key);
-          if (!done) return;
-          if (done.host !== ws) {
-            probeCollectors.delete(key);
-            return;
-          }
-          send(ws, {
-            type: 'probe:summary',
-            id: msg.id,
-            room: ws.room,
-            count: done.acks.size,
-            totalViewers: r.viewers.size
-          });
-          probeCollectors.delete(key);
-        }, 800);
-        return;
-      }
-
-      // viewer -> server: {type:'probe:ack', id, viewerId?}
-      if (ws.role === 'viewer' && msg.type === 'probe:ack' && msg.id) {
-        const key = `${ws.room}:${msg.id}`;
-        const col = probeCollectors.get(key);
-        if (col) {
-          // Use ws.id if available; otherwise generate a short token
-          const vid = ws.id || `v${Math.random().toString(36).slice(2,7)}`;
-          col.acks.add(vid);
-        }
-        return;
-      }
-
-      // === Room-scoped MIDI relay (unchanged feature)
-      // Expect: { type:'midi', mtype:'noteon'|'noteoff'|'cc', ch, ... }
-      // Relay to all clients in the same room EXCEPT the sender.
-      if (msg.type === 'midi' && ws.room) {
-        const r = getRoom(ws.room);
-        const packet = JSON.stringify({ ...msg, room: ws.room });
-        for (const s of [...r.hosts, ...r.viewers]) {
-          if (s !== ws && s.readyState === WebSocket.OPEN) { try { s.send(packet); } catch {} }
-        }
-        return;
-      }
-
-      // === Normalized host→viewer relay
-      // New controller events pass through in their explicit relay shape so viewers
-      // can consume canonical fields directly.
-      if (ws.role === 'host' && msg.type === 'controller_event' && msg.event && typeof msg.event === 'object') {
-        broadcastToViewers_raw(ws.room, { type: 'controller_event', room: ws.room, event: msg.event }, ws);
-        return;
-      }
-
-      // === Legacy host→viewer relay preserved (info wrapper)
-      if (ws.role === 'host') {
-        // Relay the original message as {type:'info', payload:<msg>, room}
-        broadcastToViewers_wrapped(ws.room, msg, ws);
-      }
-    } catch (error) {
-      logSocket('warn', 'message-handler-error', ws, {
-        type: msg?.type || null,
-        ...errorSummary(error),
-      });
+    // === Legacy host→viewer relay preserved (info wrapper)
+    if (ws.role === 'host') {
+      // Relay the original message as {type:'info', payload:<msg>, room}
+      broadcastToViewers_wrapped(ws.room, msg, ws);
     }
   });
 
-  ws.on('close', (code, reasonBuffer) => {
-    const joinedBeforeClose = !!ws.joined;
-    const reason = Buffer.isBuffer(reasonBuffer) ? reasonBuffer.toString() : String(reasonBuffer || '');
-    cleanupProbeCollectorsForSocket(ws, 'close');
-    logSocket('log', 'socket-close', ws, {
-      code,
-      reason,
-      joinedBeforeClose,
-    });
-    if (!joinedBeforeClose) return;
-    const roomName = ws.room;
-    const r = getRoom(roomName);
+  ws.on('close', () => {
+    const r = getRoom(ws.room);
     r.hosts.delete(ws);
     r.viewers.delete(ws);
-    ws.joined = false;
-    syncSessionForRoom(roomName);
     // Broadcast updated presence when someone leaves
-    broadcastPresence(roomName);
+    broadcastPresence(ws.room);
   });
 });
 
@@ -952,7 +481,7 @@ wss.on('connection', (ws, req) => {
 const HEARTBEAT_MS = 30000;
 const hbInterval = setInterval(() => {
   for (const ws of wss.clients) {
-    if (ws.isAlive === false) { safeTerminate(ws, 'heartbeat-timeout'); continue; }
+    if (ws.isAlive === false) { ws.terminate(); continue; }
     ws.isAlive = false;
     try { ws.ping(); } catch {}
   }
@@ -964,7 +493,7 @@ if (ENABLE_ROOM_HEARTBEAT) {
   setInterval(() => {
     for (const [_name, r] of rooms) {
       for (const ws of [...r.hosts, ...r.viewers]) {
-        if (!ws.isAlive) { safeTerminate(ws, 'room-heartbeat-timeout'); continue; }
+        if (!ws.isAlive) { ws.terminate(); continue; }
         ws.isAlive = false;
         try { ws.ping(); } catch {}
       }
