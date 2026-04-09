@@ -3,17 +3,12 @@ export * from './ddj-flx6.aliases.js';
 export * from './ddj-flx6.mappings.js';
 export * from './ddj-flx6.outputs.js';
 export * from './ddj-flx6.script.js';
-export * from './ddj-flx6.ui.js';
 export * from './ddj-flx6.js';
 
 import { flx6Profile } from './ddj-flx6.js';
 
-export const officialControllerProfile = flx6Profile;
-export const officialDemoControllerProfile = flx6Profile;
-export const officialControllerProfileId = flx6Profile.id;
-
 export const controllerProfiles = Object.freeze([
-  officialControllerProfile,
+  flx6Profile,
 ]);
 
 function normalizeMatchText(value) {
@@ -101,9 +96,5 @@ export function matchControllerProfile(deviceName, transport = 'midi', meta = {}
 }
 
 export function getDefaultControllerProfile() {
-  return officialControllerProfile || null;
-}
-
-export function getOfficialControllerProfile() {
-  return officialControllerProfile || null;
+  return controllerProfiles[0] || null;
 }

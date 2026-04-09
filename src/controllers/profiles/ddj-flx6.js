@@ -19,7 +19,7 @@ export const flx6Profile = defineControllerProfile({
   manufacturer: 'Pioneer DJ',
   model: 'DDJ-FLX6',
   profileVersion: 'draft-1',
-  summary: 'First controller-profile entry for the DDJ-FLX6 using the new controller layer with prioritized input mappings and a small real LED output pass for transport buttons.',
+  summary: 'Official DDJ-FLX6 controller-profile entry for the app runtime, with profile-driven input mappings, shared controller state, normalized relay support, and the first transport LED output pass.',
   match: {
     names: ['DDJ-FLX6', 'Pioneer DDJ-FLX6'],
     namePatterns: [/DDJ[-\s]?FLX6/i, /Pioneer.*FLX6/i],
@@ -110,7 +110,7 @@ export const flx6Profile = defineControllerProfile({
     },
     hooks: flx6RuntimeHooks,
   },
-  notes: `This is the first real FLX6 profile in the new controller layer. It carries canonical aliases, prioritized raw input mappings, and the first profile-driven LED output bindings without taking over the legacy runtime yet. Raw targets currently covered here: ${flx6MappedRawTargets.join(', ')}. Output targets currently covered here: ${flx6OutputTargets.join(', ')}.`,
+  notes: `This is the official FLX6 runtime profile in the controller layer. It carries canonical aliases, prioritized raw input mappings, shared runtime hooks, and the first profile-driven LED output bindings. Raw targets currently covered here: ${flx6MappedRawTargets.join(', ')}. Output targets currently covered here: ${flx6OutputTargets.join(', ')}. Board SVG ids and local learned-map storage still remain as transitional compatibility layers while the renderer stays FLX6-specific.`,
 });
 
 export function matchesFlx6InputDevice(deviceName, transport = 'midi') {

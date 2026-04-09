@@ -13,6 +13,7 @@
 import { buildFeelRuntime } from './midi-feel.js';
 import { loadFeelConfig }   from './engine/feel-loader.js';
 import { createWebMidiAdapter } from './controllers/adapters/web-midi.js';
+import { getDefaultControllerProfile } from './controllers/profiles/index.js';
 
 // ---------- FEEL globals ----------
 // FEEL boundary in the canonical host runtime:
@@ -28,6 +29,13 @@ var FEEL_CFG = {
   controls: {},
   enabled: false
 };
+
+var DEFAULT_HOST_PROFILE = getDefaultControllerProfile();
+var DEFAULT_HOST_INPUT = DEFAULT_HOST_PROFILE
+  && DEFAULT_HOST_PROFILE.defaults
+  && DEFAULT_HOST_PROFILE.defaults.preferredInputName
+  || DEFAULT_HOST_PROFILE && DEFAULT_HOST_PROFILE.displayName
+  || 'DDJ-FLX6';
 
 function makeDisabledFeelConfig(deviceName, reason) {
   var name = deviceName || 'UNKNOWN';
@@ -112,13 +120,18 @@ export async function initWebMIDI(opts) {
   opts = opts || {};
   var onInfo         = (typeof opts.onInfo   === 'function') ? opts.onInfo   : function(){};
   var onStatus       = (typeof opts.onStatus === 'function') ? opts.onStatus : function(){};
-  var preferredInput = (typeof opts.preferredInput === 'string') ? opts.preferredInput : '';
+  var preferredInput = (typeof opts.preferredInput === 'string' && opts.preferredInput)
+    ? opts.preferredInput
+    : DEFAULT_HOST_INPUT;
+  var preferredOutput = (typeof opts.preferredOutput === 'string' && opts.preferredOutput)
+    ? opts.preferredOutput
+    : preferredInput;
   var logEnabled     = !!opts.log;
 
   function log(){ if (logEnabled) { try { console.log.apply(console, arguments); } catch(e){} } }
   var adapter = createWebMidiAdapter({
     preferredInput: preferredInput,
-    preferredOutput: preferredInput,
+    preferredOutput: preferredOutput,
     onStatus: onStatus,
     log: logEnabled
   });
@@ -159,7 +172,7 @@ export async function bootMIDIFromQuery(overrides) {
     return initWebMIDI({
       onInfo: function(){},
       onStatus: function(){},
-      preferredInput: 'DDJ-FLX6',
+      preferredInput: DEFAULT_HOST_INPUT,
       log: false
     });
   }
@@ -167,7 +180,7 @@ export async function bootMIDIFromQuery(overrides) {
   var search = '';
   try { search = String(window.location && window.location.search || ''); } catch(e) { search = ''; }
   var qs = new URLSearchParams(search);
-  var preferred = qs.get('midi') || window.__MIDI_DEVICE_NAME__ || 'DDJ-FLX6';
+  var preferred = qs.get('midi') || window.__MIDI_DEVICE_NAME__ || DEFAULT_HOST_INPUT;
 
   // Load FEEL config first, but never let FEEL failures stop canonical MIDI boot.
   await initFeelRuntime(preferred);
@@ -247,8 +260,14 @@ function feelAbs(id, raw, cfg){
 
 // Centralized CC handler using FEEL (extend with more controls later)
 function handleCC(info) {
-  // Crossfader (absolute) on CC 0x10
-  if (info.controller === CC.XFADER) {
+  // Crossfader (absolute) now prefers the canonical target from the controller
+  // layer, with the older raw CC number kept only as a transition fallback for
+  // non-profile callers.
+  var isCanonicalCrossfader = info && info.canonicalTarget === 'mixer.crossfader';
+  var isLegacyCrossfaderCC = info && info.controller === CC.XFADER;
+  var isPrimaryLane = !info || !info.mappingId || !/\.secondary$/i.test(String(info.mappingId));
+
+  if ((isCanonicalCrossfader || isLegacyCrossfaderCC) && isPrimaryLane) {
     var cfg = feelCfg('xfader');
     var out = feelAbs('xfader', info.value, cfg);
     if (out && out.apply) {

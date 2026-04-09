@@ -1,15 +1,27 @@
 // src/board.js
-// Loads assets/board.svg into #boardHost, merges flx6_map.json with local mappings,
+// Loads the active board SVG into #boardHost, merges the profile's default map
+// with local mappings,
 // auto-calibrates bounds for CH1–CH4 faders, tempos, crossfader,
 // adds jog wheel support, safe CSS-only rotation for knobs/jogs,
 // and (optionally) applies semantic/umbrella classes via groups.js for theming.
 // Console helpers under window.FLXTest.
 
 import { loadMappings as loadLocalMappings } from './mapper.js';
+import { getDefaultControllerProfile } from './controllers/profiles/index.js';
 
-const DEFAULT_SVG_URL = './assets/board.svg';
-const DEFAULT_MAP_URL = './flx6_map.json';
+const DEFAULT_BOARD_PROFILE = getDefaultControllerProfile();
+const DEFAULT_SVG_URL = DEFAULT_BOARD_PROFILE
+  && DEFAULT_BOARD_PROFILE.assets
+  && DEFAULT_BOARD_PROFILE.assets.boardSvgPath
+  || './assets/board.svg';
+const DEFAULT_MAP_URL = DEFAULT_BOARD_PROFILE
+  && DEFAULT_BOARD_PROFILE.assets
+  && DEFAULT_BOARD_PROFILE.assets.defaultMapPath
+  || './flx6_map.json';
 
+// Transitional FLX6 board-surface compatibility map.
+// The controller layer owns canonical control meaning; board.js still owns the
+// current FLX6 SVG surface ids until a later renderer abstraction exists.
 const CANONICAL_RENDER_TARGETS = Object.freeze({
   'mixer.crossfader': 'xfader_slider',
   'mixer.channel.1.fader': 'slider_ch1',

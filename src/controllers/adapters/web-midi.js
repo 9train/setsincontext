@@ -1,7 +1,7 @@
 import { createAdapterInputHub } from './boundary.js';
 import { createControllerScriptRuntime } from '../core/hooks.js';
 import { createRawInputEvent, normalizeRawInputEvent } from '../core/normalization.js';
-import { flx6Profile, matchesFlx6InputDevice } from '../profiles/ddj-flx6.js';
+import { matchControllerProfile } from '../profiles/index.js';
 
 export const WEB_MIDI_ADAPTER_ID = 'generic-web-midi';
 
@@ -85,9 +85,7 @@ function getPortSourceId(port) {
 }
 
 function resolveDefaultProfile(deviceName, transport, meta) {
-  void meta;
-  if (matchesFlx6InputDevice(deviceName, transport)) return flx6Profile;
-  return null;
+  return matchControllerProfile(deviceName, transport, meta);
 }
 
 function decodeMIDIParts(data) {

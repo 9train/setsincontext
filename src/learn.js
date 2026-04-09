@@ -3,10 +3,9 @@
 // The official learn session now lives in the controller layer.
 // This file stays as a small compatibility wrapper for Edit Mode / Wizard:
 // it captures through the controller-layer learn session, saves a draft artifact,
-// writes the current board-compatible learned map, and still mirrors legacy
-// learnedMappings as a fallback.
+// and still writes legacy learnedMappings as a fallback for the current board.
 
-import { getDefaultControllerProfile } from './controllers/profiles/index.js';
+import { lookupCanonicalAlias } from './controllers/core/aliases.js';
 import { flx6Profile } from './controllers/profiles/ddj-flx6.js';
 import {
   armLearnSession,
@@ -15,17 +14,9 @@ import {
   createLearnSession,
   exportLearnDraft,
 } from './controllers/learn/session.js';
-import {
-  loadDraftMappings as loadBoardDraftMappings,
-  loadMappings as loadBoardMappings,
-  upsertMapping as upsertBoardMapping,
-} from './mapper.js';
-import { resolveProfileEditorTarget } from './controllers/core/ui.js';
-import { getRuntimeApp } from './runtime/app-bridge.js';
 
 export const LEARNED_MAPPINGS_KEY = 'learnedMappings';
 export const CONTROLLER_LEARN_DRAFT_KEY = 'controllerLearnDraft';
-const DEFAULT_LEARN_PROFILE = getDefaultControllerProfile() || flx6Profile;
 
 function resolveId(id){
   const root = document; if (!id) return null;
@@ -35,10 +26,6 @@ function resolveId(id){
   return el ? el.id : null;
 }
 function waitNextEvent(timeoutMs=15000){
-  const runtimeApp = getRuntimeApp();
-  if (runtimeApp && typeof runtimeApp.waitForNextLearnInput === 'function') {
-    return runtimeApp.waitForNextLearnInput({ timeoutMs });
-  }
   return new Promise((res,rej)=>{
     let done=false;
     const t=setTimeout(()=>{ if(!done){done=true; window.FLX_LEARN_HOOK=null; rej(new Error('Timed out'))}}, timeoutMs);
@@ -51,7 +38,7 @@ function entryFromInfo(info, target, name){
   const key  = `${type}:${info.ch}:${code}`;
   return { name: name||target||key, key, type, ch: info.ch, code, target };
 }
-function saveLegacyLocal(entry){
+function saveLocal(entry){
   const k=LEARNED_MAPPINGS_KEY;
   let a=[]; try{ a=JSON.parse(localStorage.getItem(k)||'[]'); }catch{}
   const i=a.findIndex(x=>x.key===entry.key);
@@ -59,12 +46,7 @@ function saveLegacyLocal(entry){
   localStorage.setItem(k, JSON.stringify(a));
 }
 
-function saveBoardLocal(entry){
-  upsertBoardMapping(entry);
-  try { window.dispatchEvent(new CustomEvent('flx:map-updated')); } catch {}
-}
-
-export function getControllerLearnDraftStorageKey(profileId = DEFAULT_LEARN_PROFILE.id){
+export function getControllerLearnDraftStorageKey(profileId = flx6Profile.id){
   return `${CONTROLLER_LEARN_DRAFT_KEY}:${profileId || 'unknown'}`;
 }
 
@@ -72,13 +54,13 @@ function saveDraftLocal(draft){
   if (!draft || typeof draft !== 'object') return;
   try {
     localStorage.setItem(
-      getControllerLearnDraftStorageKey(draft.profileId || DEFAULT_LEARN_PROFILE.id),
+      getControllerLearnDraftStorageKey(draft.profileId || flx6Profile.id),
       JSON.stringify(draft),
     );
   } catch {}
 }
 
-export function loadControllerLearnDraft(profileId = DEFAULT_LEARN_PROFILE.id){
+export function loadControllerLearnDraft(profileId = flx6Profile.id){
   try {
     const raw = localStorage.getItem(getControllerLearnDraftStorageKey(profileId));
     return raw ? JSON.parse(raw) : null;
@@ -87,145 +69,26 @@ export function loadControllerLearnDraft(profileId = DEFAULT_LEARN_PROFILE.id){
   }
 }
 
-function clonePlain(value) {
-  return value == null ? value : JSON.parse(JSON.stringify(value));
+function resolveCanonicalTarget(target){
+  if (!target) return null;
+  const aliases = flx6Profile && flx6Profile.aliases && flx6Profile.aliases.controls || null;
+  return lookupCanonicalAlias(aliases, target);
 }
 
-function matchesDraftReviewScope(record, scope = {}) {
-  if (!record || typeof record !== 'object') return false;
-  const targetId = String(scope.targetId || '').trim();
-  const canonicalTarget = String(scope.canonicalTarget || '').trim();
-  if (!targetId && !canonicalTarget) return true;
-
-  return (
-    (targetId && (
-      String(record.target || '').trim() === targetId
-      || String(record.rawTarget || '').trim() === targetId
-    ))
-    || (canonicalTarget && (
-      String(record.canonicalTarget || record.canonical || '').trim() === canonicalTarget
-    ))
-  );
-}
-
-function filterLearnDraftForScope(draft, scope = {}) {
-  if (!draft || typeof draft !== 'object') return null;
-
-  const mappings = Array.isArray(draft.mappings)
-    ? draft.mappings.filter((mapping) => matchesDraftReviewScope(mapping, scope)).map((mapping) => clonePlain(mapping))
-    : [];
-  const hasScope = !!(scope.targetId || scope.canonicalTarget);
-
-  if (hasScope && !mappings.length) return null;
-
-  const captureIds = new Set(
-    mappings
-      .map((mapping) => mapping && mapping.learn && mapping.learn.captureId || null)
-      .filter(Boolean),
-  );
-  const assignments = Array.isArray(draft.assignments)
-    ? draft.assignments
-      .filter((assignment) =>
-        !hasScope
-        || captureIds.has(assignment && assignment.captureId)
-        || matchesDraftReviewScope(assignment, scope)
-      )
-      .map((assignment) => clonePlain(assignment))
-    : [];
-
-  return {
-    ...clonePlain(draft),
-    assignments,
-    mappings,
-  };
-}
-
-function resolveCanonicalTarget(target, profile = DEFAULT_LEARN_PROFILE){
-  return resolveProfileEditorTarget(target, profile)?.canonicalTarget || null;
-}
-
-export function buildDraftReviewArtifact({
-  targetId = null,
-  canonicalTarget = null,
-  profile = DEFAULT_LEARN_PROFILE,
-  exportedAt = Date.now(),
-} = {}) {
-  const profileId = profile && profile.id || DEFAULT_LEARN_PROFILE.id;
-  const scopedCanonicalTarget = canonicalTarget
-    || resolveCanonicalTarget(targetId, profile)
-    || null;
-  const scope = Object.freeze({
-    mode: targetId || scopedCanonicalTarget ? 'selected-target' : 'all-drafts',
-    targetId: targetId || null,
-    canonicalTarget: scopedCanonicalTarget,
-  });
-  const boardDraftMappings = Object.freeze(
-    loadBoardDraftMappings(scope).map((entry) => Object.freeze(clonePlain(entry))),
-  );
-  const learnDraft = filterLearnDraftForScope(loadControllerLearnDraft(profileId), scope);
-  const learnDraftMappings = Array.isArray(learnDraft && learnDraft.mappings)
-    ? learnDraft.mappings
-    : [];
-  const rawLanes = new Set([
-    ...boardDraftMappings.map((entry) => entry && entry.key || null),
-    ...learnDraftMappings.map((mapping) => mapping && mapping.raw && mapping.raw.key || null),
-  ].filter(Boolean));
-
-  return Object.freeze({
-    kind: 'flx6-draft-review',
-    version: 1,
-    profileId,
-    exportedAt,
-    scope,
-    safety: Object.freeze({
-      officialProfileIncluded: false,
-      draftFirst: true,
-      description: 'This artifact contains only draft/learned review data. Official FLX6 profile truth is intentionally excluded.',
-    }),
-    summary: Object.freeze({
-      boardDraftCount: boardDraftMappings.length,
-      learnDraftMappingCount: learnDraftMappings.length,
-      rawLaneCount: rawLanes.size,
-    }),
-    notes: Object.freeze([
-      'Draft review data stays separate from shipped official FLX6 profile truth.',
-      'Any accepted change still needs an official FLX6 profile update before it becomes authoritative.',
-    ]),
-    boardDraftMappings,
-    learnDraft: learnDraft ? Object.freeze(clonePlain(learnDraft)) : null,
-  });
-}
-
-export async function copyDraftReviewJSON(options = {}) {
-  const artifact = buildDraftReviewArtifact(options);
-  const text = JSON.stringify(artifact, null, 2);
-  try {
-    await navigator.clipboard.writeText(text);
-    console.log('%cDraft review JSON copied to clipboard', 'color:#6ea8fe');
-  } catch {
-    console.log(text);
-  }
-  return artifact;
-}
-
-export async function learnNext({ target, canonicalTarget = null, name, profile = DEFAULT_LEARN_PROFILE, timeoutMs=15000 }={}){
-  if (!target && !canonicalTarget) throw new Error('learnNext needs { target }');
-  const targetSelection = resolveProfileEditorTarget(canonicalTarget || target, profile);
-  const resolvedTarget = targetSelection && targetSelection.targetId || target;
-  const id = resolveId(resolvedTarget);
-  if (!id) throw new Error('SVG id not found: ' + resolvedTarget);
+export async function learnNext({ target, name, timeoutMs=15000 }={}){
+  if (!target) throw new Error('learnNext needs { target }');
+  const id = resolveId(target);
+  if (!id) throw new Error('SVG id not found: '+target);
   const el = document.getElementById(id);
   el.classList.add('lit'); setTimeout(()=>el.classList.remove('lit'), 250);
-  const selectedCanonicalTarget = canonicalTarget
-    || targetSelection && targetSelection.canonicalTarget
-    || resolveCanonicalTarget(id, profile);
-  const session = createLearnSession({ profile, mode: 'single' });
-  if (selectedCanonicalTarget) {
-    armLearnSession(session, { targetId: selectedCanonicalTarget });
+  const canonicalTarget = resolveCanonicalTarget(id);
+  const session = createLearnSession({ profile: flx6Profile, mode: 'single' });
+  if (canonicalTarget) {
+    armLearnSession(session, { targetId: canonicalTarget });
   }
   const info  = await waitNextEvent(timeoutMs);
-  const capture = captureLearnInput(session, info, { profile });
-  const assignedCanonicalTarget = selectedCanonicalTarget
+  const capture = captureLearnInput(session, info, { profile: flx6Profile });
+  const assignedCanonicalTarget = canonicalTarget
     || capture && capture.existingCanonicalTarget
     || null;
   const existingAssignment = session.assignments[session.assignments.length - 1] || null;
@@ -241,7 +104,7 @@ export async function learnNext({ target, canonicalTarget = null, name, profile 
   if (draft.mappings.length) saveDraftLocal(draft);
 
   const entry = {
-    ...entryFromInfo(info, id, name || targetSelection && targetSelection.label || id),
+    ...entryFromInfo(info, id, name),
     canonicalTarget: assignment && assignment.canonicalTarget || assignedCanonicalTarget,
     mapped: !!(capture && capture.mapped),
     mappingId: capture && capture.existingMappingId || null,
@@ -250,7 +113,7 @@ export async function learnNext({ target, canonicalTarget = null, name, profile 
     draft: assignment && assignment.mapping || draft.mappings[0] || null,
     learnDraft: draft,
   };
-  const savedEntry = {
+  saveLocal({
     name: entry.name,
     key: entry.key,
     type: entry.type,
@@ -261,26 +124,21 @@ export async function learnNext({ target, canonicalTarget = null, name, profile 
     mapped: entry.mapped,
     mappingId: entry.mappingId,
     rawTarget: entry.rawTarget,
-  };
-  saveBoardLocal(savedEntry);
-  saveLegacyLocal(savedEntry);
+  });
   try { const board = await import('./board.js'); await board.initBoard({ hostId:'boardHost' }); } catch {}
   return entry;
 }
 
 export async function copyMergedJSON(){
   let fileMap=[]; try{
-    const mapUrl = DEFAULT_LEARN_PROFILE
-      && DEFAULT_LEARN_PROFILE.assets
-      && DEFAULT_LEARN_PROFILE.assets.defaultMapPath
+    const mapUrl = flx6Profile
+      && flx6Profile.assets
+      && flx6Profile.assets.defaultMapPath
       || '/flx6_map.json';
     const r = await fetch(mapUrl,{ cache:'no-store' });
     if (r.ok) fileMap = await r.json();
   }catch{}
-  let local = loadBoardMappings();
-  if (!local.length) {
-    try { local = JSON.parse(localStorage.getItem(LEARNED_MAPPINGS_KEY)||'[]'); } catch {}
-  }
+  let local=[]; try{ local = JSON.parse(localStorage.getItem('learnedMappings')||'[]'); }catch{}
   const byKey = new Map();
   fileMap.forEach(m => byKey.set(m.key || `${m.type}:${m.ch}:${m.code}` || m.target, m));
   local.forEach(m => byKey.set(m.key || `${m.type}:${m.ch}:${m.code}` || m.target, { ...(byKey.get(m.key)||{}), ...m }));
@@ -292,8 +150,6 @@ export async function copyMergedJSON(){
 }
 
 if (typeof window!=='undefined') window.FLXLearn = {
-  buildDraftReviewArtifact,
-  copyDraftReviewJSON,
   learnNext,
   copyJSON: copyMergedJSON,
   loadDraft: loadControllerLearnDraft,
