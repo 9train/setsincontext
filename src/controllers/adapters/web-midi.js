@@ -562,6 +562,7 @@ export function createWebMidiAdapter(options) {
             requestedMessages: queue.slice(),
             device: deviceInfo,
             profile,
+            timestamp: Number(now()) || Date.now(),
           })
           : null;
         if (hookResult && Array.isArray(hookResult.messages) && hookResult.messages.length) {

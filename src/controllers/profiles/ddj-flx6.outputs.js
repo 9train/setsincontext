@@ -2,54 +2,29 @@ function freezeOutputBinding(binding) {
   const out = { ...binding };
   if (out.context) out.context = Object.freeze({ ...out.context });
   if (out.target) out.target = Object.freeze({ ...out.target });
-  if (out.valueRange) out.valueRange = Object.freeze({ ...out.valueRange });
   return Object.freeze(out);
 }
 
-function outputBinding({
+function lightBinding({
   id,
   canonical,
-  feedbackKind = 'light',
-  interaction = 'noteon',
   channel,
   code,
   context,
-  binary,
-  valueRange,
   note,
 }) {
   return freezeOutputBinding({
     id,
     canonical,
     context,
-    feedbackKind,
-    binary,
-    valueRange,
+    feedbackKind: 'light',
     target: {
       kind: 'light',
       channel,
       code,
-      key: `${interaction}:${channel}:${code}`,
+      key: `noteon:${channel}:${code}`,
     },
     note,
-  });
-}
-
-function lightBinding(options) {
-  return outputBinding({
-    ...options,
-    feedbackKind: 'light',
-    interaction: 'noteon',
-    binary: options && options.binary !== false,
-  });
-}
-
-function valueBinding(options) {
-  return outputBinding({
-    ...options,
-    feedbackKind: 'value',
-    interaction: 'cc',
-    binary: false,
   });
 }
 
@@ -58,15 +33,6 @@ function normalizeDeckLayer(value) {
   if (text === 'alternate') return 'alternate';
   if (text === 'main') return 'main';
   return null;
-}
-
-function normalizePadMode(value) {
-  const text = String(value || '').trim().toLowerCase();
-  return text || null;
-}
-
-function isPadCanonicalTarget(value) {
-  return /^deck\.(left|right)\.pad\.[1-8]$/i.test(String(value || '').trim());
 }
 
 function getDeckSide(canonicalTarget) {
@@ -88,135 +54,6 @@ function getRequestedDeckLayer(request, controllerState) {
   return fromState || 'main';
 }
 
-function getRequestedPadMode(request, controllerState) {
-  const fromContext = normalizePadMode(request && request.context && request.context.mode);
-  if (fromContext) return fromContext;
-
-  const side = getDeckSide(request && request.canonicalTarget);
-  const fromState = side
-    && controllerState
-    && controllerState.padMode
-    && normalizePadMode(controllerState.padMode[side]);
-  return fromState || null;
-}
-
-const flx6PadDeckOutputs = Object.freeze([
-  Object.freeze({
-    side: 'left',
-    deckLayer: 'main',
-    buttonChannel: 1,
-    padChannel: 9,
-    label: 'Left main deck',
-  }),
-  Object.freeze({
-    side: 'right',
-    deckLayer: 'main',
-    buttonChannel: 2,
-    padChannel: 11,
-    label: 'Right main deck',
-  }),
-  Object.freeze({
-    side: 'left',
-    deckLayer: 'alternate',
-    buttonChannel: 3,
-    padChannel: 13,
-    label: 'Left alternate deck',
-  }),
-  Object.freeze({
-    side: 'right',
-    deckLayer: 'alternate',
-    buttonChannel: 4,
-    padChannel: 15,
-    label: 'Right alternate deck',
-  }),
-]);
-
-const flx6PadFeedbackBanks = Object.freeze([
-  Object.freeze({
-    mode: 'hotcue',
-    label: 'Hot Cue',
-    modeButtonCode: 27,
-    padCodeStart: 0,
-  }),
-  Object.freeze({
-    mode: 'fx',
-    label: 'Pad FX',
-    modeButtonCode: 30,
-    padCodeStart: 16,
-  }),
-  Object.freeze({
-    mode: 'beatjump',
-    label: 'Beat Jump',
-    modeButtonCode: 32,
-    padCodeStart: 32,
-  }),
-  Object.freeze({
-    mode: 'sampler',
-    label: 'Sampler',
-    modeButtonCode: 34,
-    padCodeStart: 48,
-  }),
-  Object.freeze({
-    mode: 'keyboard',
-    label: 'Keyboard',
-    modeButtonCode: 105,
-    padCodeStart: 64,
-  }),
-  Object.freeze({
-    mode: 'key_shift',
-    label: 'Key Shift',
-    modeButtonCode: 111,
-    padCodeStart: 80,
-  }),
-  Object.freeze({
-    mode: 'beat_loop',
-    label: 'Beat Loop',
-    modeButtonCode: 109,
-    padCodeStart: 96,
-  }),
-  Object.freeze({
-    mode: 'sample_scratch',
-    label: 'Sample Scratch',
-    modeButtonCode: 107,
-    padCodeStart: 112,
-  }),
-]);
-
-function buildPadModeOutputBindings() {
-  return flx6PadDeckOutputs.flatMap((lane) =>
-    flx6PadFeedbackBanks.map((bank) =>
-      lightBinding({
-        id: `deck.${lane.side}.pad_mode.${bank.mode}.${lane.deckLayer}.led`,
-        canonical: `deck.${lane.side}.pad_mode.${bank.mode}`,
-        channel: lane.buttonChannel,
-        code: bank.modeButtonCode,
-        context: { deckLayer: lane.deckLayer },
-        note: `${lane.label} ${bank.label} mode LED from the FLX6 CSV MIDI-OUT rows.`,
-      })
-    )
-  );
-}
-
-function buildPadSurfaceOutputBindings() {
-  return flx6PadDeckOutputs.flatMap((lane) =>
-    flx6PadFeedbackBanks.flatMap((bank) =>
-      Array.from({ length: 8 }, (_, index) =>
-        lightBinding({
-          id: `deck.${lane.side}.pad.${index + 1}.${lane.deckLayer}.${bank.mode}.led`,
-          canonical: `deck.${lane.side}.pad.${index + 1}`,
-          channel: lane.padChannel,
-          code: bank.padCodeStart + index,
-          context: {
-            deckLayer: lane.deckLayer,
-            mode: bank.mode,
-          },
-          note: `${lane.label} pad ${index + 1} ${bank.label} LED from the FLX6 CSV MIDI-OUT rows.`,
-        })
-      )
-    )
-  );
-}
-
 function coerceLightValue(value) {
   if (typeof value === 'boolean') return value ? 127 : 0;
   if (typeof value === 'string') {
@@ -230,24 +67,6 @@ function coerceLightValue(value) {
   numeric = Math.round(numeric);
   if (numeric < 0) numeric = 0;
   if (numeric > 127) numeric = 127;
-  return numeric;
-}
-
-function coerceBindingValue(value, binding) {
-  if (binding && binding.binary) {
-    return coerceLightValue(value) > 0 ? 127 : 0;
-  }
-
-  let numeric = coerceLightValue(value);
-  const min = binding && binding.valueRange && binding.valueRange.min != null
-    ? Number(binding.valueRange.min)
-    : 0;
-  const max = binding && binding.valueRange && binding.valueRange.max != null
-    ? Number(binding.valueRange.max)
-    : 127;
-
-  if (numeric < min) numeric = min;
-  if (numeric > max) numeric = max;
   return numeric;
 }
 
@@ -316,64 +135,6 @@ export const flx6OutputBindings = Object.freeze([
     context: { deckLayer: 'alternate' },
     note: 'Right cue LED for the alternate deck layer.',
   }),
-  valueBinding({
-    id: 'deck.left.jog.illumination.main',
-    canonical: 'deck.left.jog.motion',
-    channel: 12,
-    code: 0,
-    context: { deckLayer: 'main' },
-    valueRange: { min: 0, max: 0x48 },
-    note: 'Left jog illumination for the main deck layer from the FLX6 CSV MIDI-OUT rows.',
-  }),
-  valueBinding({
-    id: 'deck.right.jog.illumination.main',
-    canonical: 'deck.right.jog.motion',
-    channel: 12,
-    code: 1,
-    context: { deckLayer: 'main' },
-    valueRange: { min: 0, max: 0x48 },
-    note: 'Right jog illumination for the main deck layer from the FLX6 CSV MIDI-OUT rows.',
-  }),
-  valueBinding({
-    id: 'deck.left.jog.illumination.alternate',
-    canonical: 'deck.left.jog.motion',
-    channel: 12,
-    code: 2,
-    context: { deckLayer: 'alternate' },
-    valueRange: { min: 0, max: 0x48 },
-    note: 'Left jog illumination for the alternate deck layer from the FLX6 CSV MIDI-OUT rows.',
-  }),
-  valueBinding({
-    id: 'deck.right.jog.illumination.alternate',
-    canonical: 'deck.right.jog.motion',
-    channel: 12,
-    code: 3,
-    context: { deckLayer: 'alternate' },
-    valueRange: { min: 0, max: 0x48 },
-    note: 'Right jog illumination for the alternate deck layer from the FLX6 CSV MIDI-OUT rows.',
-  }),
-  outputBinding({
-    id: 'deck.left.fx.quick.illumination',
-    canonical: 'deck.left.fx.quick',
-    feedbackKind: 'light',
-    interaction: 'cc',
-    binary: true,
-    channel: 5,
-    code: 16,
-    note: 'Left Merge FX illumination from the FLX6 CSV MIDI-OUT rows.',
-  }),
-  outputBinding({
-    id: 'deck.right.fx.quick.illumination',
-    canonical: 'deck.right.fx.quick',
-    feedbackKind: 'light',
-    interaction: 'cc',
-    binary: true,
-    channel: 6,
-    code: 16,
-    note: 'Right Merge FX illumination from the FLX6 CSV MIDI-OUT rows.',
-  }),
-  ...buildPadModeOutputBindings(),
-  ...buildPadSurfaceOutputBindings(),
 ]);
 
 export const flx6OutputTargets = Object.freeze([
@@ -404,22 +165,11 @@ export function findFlx6OutputBindings(request, options = {}) {
   if (!candidates.length) return [];
 
   const deckLayer = getRequestedDeckLayer(request, options.controllerState);
-  const exactLayer = candidates.filter((binding) =>
+  const exact = candidates.filter((binding) =>
     normalizeDeckLayer(binding && binding.context && binding.context.deckLayer) === deckLayer
   );
-  const scoped = exactLayer.length ? exactLayer : candidates;
 
-  if (!isPadCanonicalTarget(canonicalTarget)) {
-    return scoped;
-  }
-
-  const padMode = getRequestedPadMode(request, options.controllerState);
-  if (!padMode) return [];
-
-  const exactMode = scoped.filter((binding) =>
-    normalizePadMode(binding && binding.context && binding.context.mode) === padMode
-  );
-  return exactMode.length ? exactMode : [];
+  return exact.length ? exact : candidates;
 }
 
 /**
@@ -457,7 +207,7 @@ export function buildFlx6OutputMessages(requests, options = {}) {
           ...(binding.context || {}),
           ...(request.context || {}),
         }),
-        value: coerceBindingValue(request.value, binding),
+        value: coerceLightValue(request.value),
         outputKind: binding.feedbackKind || 'light',
         bindingId: binding.id || undefined,
         timestamp: request.timestamp != null ? Number(request.timestamp) : timestamp,

@@ -6,6 +6,7 @@ import {
   setTemporaryState,
   snapshotControllerState,
 } from '../core/state.js';
+import { buildFlx6OutputMessages } from './ddj-flx6.outputs.js';
 
 function freezeTemplate(state) {
   const pairedValues = {};
@@ -247,20 +248,37 @@ export function handleOutput(appState, controllerState, controllerCtx) {
     ? appState.requestedMessages
     : [];
   const timestamp = getHookTimestamp(controllerCtx);
+  const bindings = controllerCtx
+    && controllerCtx.profile
+    && controllerCtx.profile.outputs
+    && Array.isArray(controllerCtx.profile.outputs.bindings)
+      ? controllerCtx.profile.outputs.bindings
+      : [];
+  const generatedMessages = buildFlx6OutputMessages(requestedMessages, {
+    profileId: controllerCtx && controllerCtx.profileId || runtimeState.profileId,
+    timestamp,
+    controllerState: runtimeState,
+    bindings,
+  });
 
   setTemporaryState(runtimeState, 'lastOutput', {
     requestedCount: requestedMessages.length,
-    generatedCount: 0,
+    generatedCount: generatedMessages.length,
+    canonicalTargets: generatedMessages.map((message) => message.canonicalTarget).filter(Boolean),
     timestamp,
   }, timestamp);
 
   return {
     ok: true,
-    executed: false,
+    executed: generatedMessages.length > 0,
     profileId: runtimeState.profileId,
     state: runtimeState,
-    messages: [],
-    reason: 'flx6-output-not-wired',
+    messages: generatedMessages,
+    reason: generatedMessages.length
+      ? null
+      : requestedMessages.length
+        ? 'no-output-bindings-matched'
+        : 'no-output-requests',
   };
 }
 
@@ -350,7 +368,7 @@ export const flx6RuntimeHooks = Object.freeze({
     id: 'flx6.output',
     modulePath: './ddj-flx6.script.js',
     exportName: 'handleOutput',
-    summary: 'Receives app-side output requests and reserves a clean FLX6-specific feedback hook without changing current LED behavior yet.',
+    summary: 'Receives canonical app-side output requests and resolves the first FLX6 transport LED messages.',
   }),
   shutdown: Object.freeze({
     id: 'flx6.shutdown',

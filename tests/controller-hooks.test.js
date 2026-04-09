@@ -117,12 +117,16 @@ test('web midi adapter invokes FLX6 hooks and exposes controller state snapshots
   assert.equal(envelopes[0].normalized[0].canonicalTarget, 'deck.right.jog.touch');
   assert.equal(envelopes[0].controllerState.jogTouch.right, true);
 
-  const sent = adapter.send([{ target: { key: 'cc:7:31' }, value: 64 }]);
+  const sent = adapter.send([{
+    canonicalTarget: 'deck.left.transport.play',
+    value: true,
+  }]);
   assert.equal(sent, true);
-  assert.deepEqual(midi.sentBytes[0], [182, 31, 64]);
+  assert.deepEqual(midi.sentBytes[0], [144, 11, 127]);
 
   const stateAfterSend = adapter.getControllerState();
   assert.equal(stateAfterSend.temporary.lastOutput.requestedCount, 1);
+  assert.equal(stateAfterSend.temporary.lastOutput.generatedCount, 1);
 
   unsubscribe();
   adapter.disconnect('stopped');

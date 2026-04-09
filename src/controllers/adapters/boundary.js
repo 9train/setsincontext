@@ -65,7 +65,7 @@ export const adapterConnectionStates = Object.freeze([
  * @property {(context?: AdapterContext) => Promise<AdapterDeviceInfo|null>|AdapterDeviceInfo|null} connect
  * @property {(reason?: string) => Promise<void>|void} disconnect
  * @property {(callback: AdapterInputCallback) => (() => void)} onInput
- * @property {(messages: import('../output/feedback.js').FeedbackMessage[]) => Promise<boolean>|boolean} send
+ * @property {(messages: import('../output/feedback.js').OutputMessage[]) => Promise<boolean>|boolean} send
  * @property {() => AdapterDeviceInfo|null} getDeviceInfo
  */
 

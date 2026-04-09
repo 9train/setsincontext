@@ -47,7 +47,7 @@ export const controllerHookPhases = Object.freeze([
  * @property {import('./state.js').ControllerState|null=} state
  * @property {number=} handled
  * @property {string|null=} reason
- * @property {import('../output/feedback.js').FeedbackMessage[]=} messages
+ * @property {import('../output/feedback.js').OutputMessage[]=} messages
  */
 
 /**
@@ -333,4 +333,3 @@ export function createControllerScriptRuntime(options = {}) {
     },
   };
 }
-
