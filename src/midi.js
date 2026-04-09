@@ -1,46 +1,95 @@
 // /src/midi.js
 // Robust WebMIDI reader with safe globals + clear status updates.
 // Works in ESM or plain script. No optional chaining, no default params syntax.
-// SOP: OG preserved; FEEL now lives in the controller-layer adapter/runtime.
+// SOP: OG preserved; added FEEL integration + snippet-based handleCC routing.
 // Canonical/default MIDI path for the official host runtime:
 //   host.html -> bootMIDIFromQuery() -> initWebMIDI() -> browser WebMIDI
 
-import { createWebMidiAdapter } from './controllers/adapters/web-midi.js';
-import { getDefaultControllerProfile } from './controllers/profiles/index.js';
-import { getRuntimeApp } from './runtime/app-bridge.js';
+// Requires:
+//   /src/midi-feel.js            → export function buildFeelRuntime(config)
+//   /src/engine/feel-loader.js   → export async function loadFeelConfig({ deviceName, url })
+//   /maps/flx6-feel.json         → feel config (served by your dev server)
 
-var DEFAULT_HOST_PROFILE = getDefaultControllerProfile();
-var DEFAULT_HOST_INPUT = DEFAULT_HOST_PROFILE
-  && DEFAULT_HOST_PROFILE.defaults
-  && DEFAULT_HOST_PROFILE.defaults.preferredInputName
-  || DEFAULT_HOST_PROFILE && DEFAULT_HOST_PROFILE.displayName
-  || 'DDJ-FLX6';
+import { buildFeelRuntime } from './midi-feel.js';
+import { loadFeelConfig }   from './engine/feel-loader.js';
+import { createRawInputEvent, normalizeRawInputEvent } from './controllers/core/normalization.js';
+import { flx6Profile, matchesFlx6InputDevice } from './controllers/profiles/ddj-flx6.js';
 
-function publishFeelState(state) {
+// ---------- FEEL globals ----------
+// FEEL boundary in the canonical host runtime:
+// - bootMIDIFromQuery() loads device feel config by default
+// - the host exposes window.__MIDI_FEEL__ for inspection/debugging
+// - the only in-file FEEL apply path is the optional xfader dispatcher bridge below
+// - live FEEL editing hooks live outside the supported host path unless explicitly enabled
+var FEEL = null;
+var FEEL_CFG = {
+  device: 'UNKNOWN',
+  deviceName: 'UNKNOWN',
+  global: {},
+  controls: {},
+  enabled: false
+};
+
+function makeDisabledFeelConfig(deviceName, reason) {
+  var name = deviceName || 'UNKNOWN';
+  return {
+    device: name,
+    deviceName: name,
+    global: {},
+    controls: {},
+    enabled: false,
+    disabledReason: reason || 'feel-disabled'
+  };
+}
+
+function publishFeelState(reason, error) {
   try {
     if (typeof window !== 'undefined') {
-      window.__MIDI_FEEL__ = state || {
-        FEEL: null,
-        FEEL_CFG: {
-          device: 'UNKNOWN',
-          deviceName: 'UNKNOWN',
-          global: {},
-          controls: {},
-          enabled: false,
-          disabledReason: 'not-initialized'
-        },
-        enabled: false,
-        reason: 'not-initialized',
-        error: null
+      window.__MIDI_FEEL__ = {
+        FEEL: FEEL,
+        FEEL_CFG: FEEL_CFG,
+        enabled: !!FEEL,
+        reason: reason || null,
+        error: error ? String((error && error.message) || error) : null
       };
     }
   } catch (e) {}
 }
 
+async function initFeelRuntime(deviceName) {
+  var cfg = null;
+
+  try {
+    cfg = await loadFeelConfig({ deviceName: deviceName });
+  } catch (eLoad) {
+    FEEL = null;
+    FEEL_CFG = makeDisabledFeelConfig(deviceName, 'config-load-failed');
+    try { console.warn('[MIDI] FEEL disabled; config load failed for', deviceName, eLoad); } catch(_){}
+    publishFeelState('config-load-failed', eLoad);
+    return;
+  }
+
+  try {
+    FEEL_CFG = (cfg && typeof cfg === 'object')
+      ? { ...cfg, enabled: true }
+      : {
+          ...makeDisabledFeelConfig(deviceName, 'invalid-config'),
+          enabled: true
+        };
+    FEEL = buildFeelRuntime(FEEL_CFG);
+    publishFeelState(null, null);
+  } catch (eBuild) {
+    FEEL = null;
+    FEEL_CFG = makeDisabledFeelConfig(deviceName, 'runtime-init-failed');
+    try { console.warn('[MIDI] FEEL disabled; runtime init failed for', deviceName, eBuild); } catch(_){}
+    publishFeelState('runtime-init-failed', eBuild);
+  }
+}
+
 // Allow external access for console tuning:
 try {
   if (typeof window !== 'undefined') {
-    publishFeelState(null);
+    publishFeelState('not-initialized', null);
   }
 } catch (e) {}
 
@@ -64,61 +113,107 @@ export async function initWebMIDI(opts) {
   opts = opts || {};
   var onInfo         = (typeof opts.onInfo   === 'function') ? opts.onInfo   : function(){};
   var onStatus       = (typeof opts.onStatus === 'function') ? opts.onStatus : function(){};
-  var preferredInput = (typeof opts.preferredInput === 'string' && opts.preferredInput)
-    ? opts.preferredInput
-    : DEFAULT_HOST_INPUT;
-  var preferredOutput = (typeof opts.preferredOutput === 'string' && opts.preferredOutput)
-    ? opts.preferredOutput
-    : preferredInput;
+  var preferredInput = (typeof opts.preferredInput === 'string') ? opts.preferredInput : '';
   var logEnabled     = !!opts.log;
-  var runtimeApp = getRuntimeApp();
 
   function log(){ if (logEnabled) { try { console.log.apply(console, arguments); } catch(e){} } }
-  var adapter = createWebMidiAdapter({
-    preferredInput: preferredInput,
-    preferredOutput: preferredOutput,
-    onStatus: onStatus,
-    log: logEnabled
-  });
-  var unsubscribeFeelState = adapter && adapter.onFeelStateChange
-    ? adapter.onFeelStateChange(function (state) {
-        publishFeelState(state);
-      })
-    : function(){};
 
-  var unsubscribeInput = adapter.onInput(function (envelope) {
-    var events = envelope && envelope.normalized || [];
+  // Environment gate
+  if (typeof navigator === 'undefined' || typeof navigator.requestMIDIAccess !== 'function') {
+    onStatus('unsupported');
+    console.warn('[WebMIDI] Not supported in this environment.');
+    // return a handle that still has listInputs/stop so callers never crash
+    return makeHandle(null, null, onStatus, log, null, null);
+  }
+
+  onStatus('requesting');
+
+  var access = null;
+  try {
+    access = await navigator.requestMIDIAccess({ sysex: false });
+  } catch (e) {
+    onStatus('denied');
+    console.warn('[WebMIDI] Permission denied or request failed.');
+    return makeHandle(null, null, onStatus, log, null, null);
+  }
+
+  onStatus('ready');
+
+  var inputs = toArray(access.inputs && access.inputs.values && access.inputs.values());
+  if (!inputs.length) {
+    onStatus('no-inputs');
+    console.warn('[WebMIDI] No MIDI inputs found.');
+    // expose globals now (still useful; will list [])
+    exposeGlobals(access, null, onStatus, log, null, null);
+    return makeHandle(access, null, onStatus, log, null, null);
+  }
+
+  var input = pickInput(inputs, preferredInput);
+  if (!input) {
+    onStatus('no-inputs');
+    console.warn('[WebMIDI] No matching input. Available:', inputs.map(function(i){ return i.name; }));
+    exposeGlobals(access, null, onStatus, log, null, null);
+    return makeHandle(access, null, onStatus, log, null, null);
+  }
+
+  var handler = function (ev) {
+    var profile = resolveInputProfile(input && input.name, 'midi');
+    var rawEvent = decodeRawMIDIEvent(ev && ev.data, {
+      deviceName: input && input.name,
+      sourceId: getInputSourceId(input),
+      profileId: profile && profile.id,
+      timestamp: Date.now(),
+    });
+    if (!rawEvent) return;
+
+    var result = normalizeRawInputEvent(rawEvent, {
+      profile: profile,
+      profileId: profile && profile.id,
+      sourceId: rawEvent.sourceId,
+      timestamp: rawEvent.timestamp,
+    });
+    var events = result && result.events || [];
     if (!events.length) return;
 
     for (var i = 0; i < events.length; i++) {
-      var normalized = events[i] || {};
-      var info = Object.assign({}, normalized, {
-        raw: envelope && envelope.raw || normalized.raw || null,
-        controllerState: envelope && envelope.controllerState || null,
-        device: envelope && envelope.device || null,
-        profile: envelope && envelope.profile || null
-      });
+      var info = events[i];
 
-      // Optional compatibility bridge for older global dispatcher experiments.
-      try { handleFeelBridge(info); } catch (eFeel) { try { console.warn('[MIDI/feel] bridge error', eFeel); } catch(_){} }
+      // ===== FEEL-AWARE ROUTING via your snippet (non-breaking) =====
+      try { if (info.type === 'cc') handleCC(info); } catch (eFeel) { try { console.warn('[MIDI/feel] routing error', eFeel); } catch(_){} }
 
       // 1) your app callback
       try { onInfo(info); } catch(e){}
-      // 2) bridge-owned learn/monitor notifications; globals remain as aliases
-      try { runtimeApp && runtimeApp.emitLearnInput && runtimeApp.emitLearnInput(info); } catch(e){}
-      try { runtimeApp && runtimeApp.emitMonitorInput && runtimeApp.emitMonitorInput(info); } catch(e){}
+      // 2) optional console hooks; never throw
+      try { if (typeof window !== 'undefined' && window.FLX_LEARN_HOOK)   window.FLX_LEARN_HOOK(info); } catch(e){}
+      try { if (typeof window !== 'undefined' && window.FLX_MONITOR_HOOK) window.FLX_MONITOR_HOOK(info); } catch(e){}
     }
-  });
+  };
+
+  try { input.onmidimessage = handler; } catch(e){}
+  onStatus('listening:' + input.name);
+  log('[WebMIDI] Listening on:', input.name);
+
+  var stateHandler = function (e) {
+    try {
+      var t = e && e.port && e.port.type;
+      var n = e && e.port && e.port.name;
+      var s = e && e.port && e.port.state;
+      if (t && n && s) log('[WebMIDI] state:', t + ' "' + n + '" ' + s);
+    } catch (err) {}
+  };
 
   try {
-    await adapter.connect();
-    try { publishFeelState(adapter.getFeelState ? adapter.getFeelState() : null); } catch(e){}
-  } catch (e) {
-    try { console.warn('[WebMIDI] Adapter connect failed.', e); } catch(err){}
-  }
+    if (typeof access.addEventListener === 'function') {
+      access.addEventListener('statechange', stateHandler);
+    } else if ('onstatechange' in access) {
+      access.onstatechange = stateHandler;
+    }
+  } catch (e) {}
 
-  exposeGlobals(adapter);
-  return makeHandle(adapter, unsubscribeInput, unsubscribeFeelState);
+  // publish real helpers now that we have access
+  exposeGlobals(access, input, onStatus, log, handler, stateHandler);
+
+  return makeHandle(access, input, onStatus, log, handler, stateHandler);
 }
 
 // ---- SOP addition: snippet-compatible bootstrap (feels integrated) ----
@@ -129,7 +224,7 @@ export async function bootMIDIFromQuery(overrides) {
     return initWebMIDI({
       onInfo: function(){},
       onStatus: function(){},
-      preferredInput: DEFAULT_HOST_INPUT,
+      preferredInput: 'DDJ-FLX6',
       log: false
     });
   }
@@ -137,7 +232,10 @@ export async function bootMIDIFromQuery(overrides) {
   var search = '';
   try { search = String(window.location && window.location.search || ''); } catch(e) { search = ''; }
   var qs = new URLSearchParams(search);
-  var preferred = qs.get('midi') || window.__MIDI_DEVICE_NAME__ || DEFAULT_HOST_INPUT;
+  var preferred = qs.get('midi') || window.__MIDI_DEVICE_NAME__ || 'DDJ-FLX6';
+
+  // Load FEEL config first, but never let FEEL failures stop canonical MIDI boot.
+  await initFeelRuntime(preferred);
 
   var onInfo = (typeof overrides.onInfo === 'function')
     ? overrides.onInfo
@@ -190,79 +288,198 @@ try {
   }
 } catch(e){}
 
-// ===================== FEEL compatibility bridge =====================
+// ===================== SNIPPET ADDITIONS (Feel routing helpers) =====================
 
 // CC map (extend as needed)
 var CC = { XFADER: 0x10 };
 
-function handleFeelBridge(info) {
-  var feel = info && info.feel;
-  if (!feel || feel.applied !== true || feel.accepted === false) return;
+// Safe getters + simple absolute processor fallback
+function feelCfg(id){
+  try {
+    if (FEEL_CFG && FEEL_CFG.controls && FEEL_CFG.controls[id]) return FEEL_CFG.controls[id];
+  } catch(e){}
+  return {};
+}
 
-  var isCanonicalCrossfader = info && info.canonicalTarget === 'mixer.crossfader';
-  var isLegacyCrossfaderCC = info && info.controller === CC.XFADER;
-  var isPrimaryLane = !info || !info.mappingId || !/\.secondary$/i.test(String(info.mappingId));
+function feelAbs(id, raw, cfg){
+  try {
+    if (FEEL && FEEL.processAbsolute) return FEEL.processAbsolute(id, raw, cfg || {});
+  } catch(e){}
+  var v = (raw || 0) / 127;
+  if (v < 0) v = 0; else if (v > 1) v = 1;
+  return { apply: true, value: v };
+}
 
-  if ((isCanonicalCrossfader || isLegacyCrossfaderCC) && isPrimaryLane) {
-    var semanticValue = feel.value != null ? feel.value : info && info.semanticValue;
-    if (semanticValue == null) return;
-    // Canonical host note:
-    // This bridge only has an effect when an experimental/global dispatcher exists.
-    // The official host/viewer runtime does not install that dispatcher today.
-    try {
-      if (typeof dispatcher !== 'undefined' && dispatcher && dispatcher.emit) {
-        dispatcher.emit('xfader:set', semanticValue);
-      }
-    } catch(e){}
+// Centralized CC handler using FEEL (extend with more controls later)
+function handleCC(info) {
+  // Crossfader (absolute) on CC 0x10
+  if (info.controller === CC.XFADER) {
+    var cfg = feelCfg('xfader');
+    var out = feelAbs('xfader', info.value, cfg);
+    if (out && out.apply) {
+      // Canonical host note:
+      // This bridge only has an effect when an experimental/global dispatcher exists.
+      // The official host/viewer runtime does not install that dispatcher today.
+      try {
+        if (typeof dispatcher !== 'undefined' && dispatcher && dispatcher.emit) {
+          dispatcher.emit('xfader:set', out.value);
+        }
+      } catch(e){}
+    }
+    return;
   }
+
+  // Add more here, e.g. filter/jog:
+  // if (info.controller === 0x11) { /* processRelative('filter', delta, cfg) */ }
+  // if (info.controller === 0x21) { /* processJog(delta, cfg) */ }
 }
 
 // ===================== internals (unchanged OG) =====================
 
-function exposeGlobals(adapter) {
+function exposeGlobals(access, input, onStatus, log, handler, stateHandler) {
   if (typeof window === 'undefined') return;
   try {
     window.WebMIDIListInputs = function(){
-      try { return adapter && adapter.listInputs ? adapter.listInputs() : []; } catch(e){ return []; }
+      try {
+        var arr = toArray(access && access.inputs && access.inputs.values && access.inputs.values());
+        return arr.map(function(i){ return i.name; });
+      } catch(e){ return []; }
     };
     window.WebMIDIChooseInput = function(name){
       try {
-        if (!adapter || !adapter.chooseInput) return false;
-        return adapter.chooseInput(name || '');
+        if (!access) return false;
+        var arr  = toArray(access.inputs && access.inputs.values && access.inputs.values());
+        var next = pickInput(arr, name || '');
+        if (!next) { console.warn('[WebMIDI] No such input:', name); return false; }
+        try { if (input && input.onmidimessage === handler) input.onmidimessage = null; } catch(e){}
+        input = next;
+        input.onmidimessage = handler;
+        onStatus('listening:' + input.name);
+        log('[WebMIDI] Switched to:', input.name);
+        return true;
       } catch(e){ return false; }
     };
   } catch(e) {}
 }
 
-function makeHandle(adapter, unsubscribeInput, unsubscribeFeelState) {
+function makeHandle(access, input, onStatus, log, handler, stateHandler) {
   return {
-    get access(){ return adapter && adapter.getAccess ? adapter.getAccess() : null; },
-    get input(){
-      var device = adapter && adapter.getDeviceInfo ? adapter.getDeviceInfo() : null;
-      return device && device.inputName ? device.inputName : null;
-    },
+    get access(){ return access; },
+    get input(){ return input ? input.name : null; },
     listInputs: function(){
-      try { return adapter && adapter.listInputs ? adapter.listInputs() : []; } catch(e){ return []; }
-    },
-    listOutputs: function(){
-      try { return adapter && adapter.listOutputs ? adapter.listOutputs() : []; } catch(e){ return []; }
-    },
-    getDeviceInfo: function(){
-      try { return adapter && adapter.getDeviceInfo ? adapter.getDeviceInfo() : null; } catch(e){ return null; }
-    },
-    getFeelState: function(){
-      try { return adapter && adapter.getFeelState ? adapter.getFeelState() : null; } catch(e){ return null; }
-    },
-    chooseInput: function(name){
-      try { return adapter && adapter.chooseInput ? adapter.chooseInput(name || '') : false; } catch(e){ return false; }
-    },
-    chooseOutput: function(name){
-      try { return adapter && adapter.chooseOutput ? adapter.chooseOutput(name || '') : false; } catch(e){ return false; }
+      var arr = toArray(access && access.inputs && access.inputs.values && access.inputs.values());
+      return arr.map(function(i){ return i.name; });
     },
     stop: function(){
-      try { if (typeof unsubscribeInput === 'function') unsubscribeInput(); } catch(e){}
-      try { if (typeof unsubscribeFeelState === 'function') unsubscribeFeelState(); } catch(e){}
-      try { if (adapter && adapter.disconnect) adapter.disconnect('stopped'); } catch(e){}
+      try { if (input && input.onmidimessage === handler) input.onmidimessage = null; } catch(e){}
+      try {
+        if (access) {
+          if (typeof access.removeEventListener === 'function' && stateHandler) {
+            access.removeEventListener('statechange', stateHandler);
+          } else if ('onstatechange' in access) {
+            access.onstatechange = null;
+          }
+        }
+      } catch(e){}
+      onStatus('stopped');
+      log('[WebMIDI] Stopped');
     }
   };
+}
+
+function toArray(iter) {
+  if (!iter) return [];
+  try { return Array.from(iter); } catch(e){}
+  var out = [];
+  try { for (var it = iter.next(); !it.done; it = iter.next()) out.push(it.value); } catch(e){}
+  return out;
+}
+
+// Heuristic selection: exact → normalized fuzzy → IAC → Pioneer/DDJ/FLX → first
+function pickInput(inputs, wanted) {
+  if (!inputs || !inputs.length) return null;
+  if (wanted) {
+    var exact = inputs.find(function(i){ return i.name === wanted; });
+    if (exact) return exact;
+    var w = norm(wanted);
+    var fuzzy = inputs.find(function(i){
+      var n = norm(i.name);
+      return (n === w) || (n.indexOf(w) >= 0) || (w.indexOf(n) >= 0);
+    });
+    if (fuzzy) return fuzzy;
+  }
+  return (
+    inputs.find(function(i){ return /IAC/i.test(i.name) && /(Bridge|Bus)/i.test(i.name); }) ||
+    inputs.find(function(i){ return /(Pioneer|DDJ|FLX)/i.test(i.name); }) ||
+    inputs[0]
+  );
+}
+
+function norm(s) {
+  s = String(s || '');
+  try { s = s.normalize('NFKC'); } catch(e){}
+  s = s.replace(/\u00A0/g, ' ');
+  s = s.replace(/[\u2010\u2011\u2012\u2013\u2014\u2212-]/g, '-');
+  s = s.replace(/\s+/g, ' ').trim().toLowerCase();
+  return s;
+}
+
+function getInputSourceId(input) {
+  if (!input || typeof input !== 'object') return 'web-midi';
+  return String(input.id || input.name || 'web-midi');
+}
+
+function resolveInputProfile(deviceName, transport) {
+  if (matchesFlx6InputDevice(deviceName, transport)) return flx6Profile;
+  return null;
+}
+
+// Convert raw MIDI bytes into a controller-layer raw input event.
+function decodeRawMIDIEvent(data, meta) {
+  var parts = decodeMIDIParts(data);
+  if (!parts) return null;
+
+  return createRawInputEvent({
+    transport: 'midi',
+    profileId: meta && meta.profileId,
+    sourceId: meta && meta.sourceId,
+    deviceName: meta && meta.deviceName,
+    interaction: parts.interaction,
+    channel: parts.channel,
+    code: parts.code,
+    value: parts.value,
+    data1: parts.data1,
+    data2: parts.data2,
+    key: parts.key,
+    timestamp: meta && meta.timestamp,
+    bytes: Array.isArray(data) ? data : Array.from(data || []),
+  });
+}
+
+function decodeMIDIParts(data) {
+  if (!data || data.length < 2) return null;
+  var status = data[0];
+  var d1 = data[1] || 0;
+  var d2 = data[2] || 0;
+
+  var typeNibble = status & 0xF0;
+  var ch = (status & 0x0F) + 1;
+
+  if (typeNibble === 0x90) {               // NOTE ON (0 => OFF)
+    if (d2 === 0) {
+      return { interaction: 'noteoff', channel: ch, code: d1, value: 0, data1: d1, data2: 0, key: 'noteoff:' + ch + ':' + d1 };
+    }
+    return { interaction: 'noteon', channel: ch, code: d1, value: d2, data1: d1, data2: d2, key: 'noteon:' + ch + ':' + d1 };
+  }
+  if (typeNibble === 0x80) {               // NOTE OFF
+    return { interaction: 'noteoff', channel: ch, code: d1, value: 0, data1: d1, data2: d2, key: 'noteoff:' + ch + ':' + d1 };
+  }
+  if (typeNibble === 0xB0) {               // CC
+    return { interaction: 'cc', channel: ch, code: d1, value: d2, data1: d1, data2: d2, key: 'cc:' + ch + ':' + d1 };
+  }
+  if (typeNibble === 0xE0) {               // PITCH BEND (14-bit)
+    var val = ((d2 << 7) | d1) - 8192;     // -8192..+8191
+    return { interaction: 'pitch', channel: ch, code: 0, value: val, data1: d1, data2: d2, key: 'pitch:' + ch + ':0' };
+  }
+  return null;
 }

@@ -6,8 +6,7 @@ export const normalizationStages = Object.freeze([
 ]);
 
 /**
- * Normalization context shared across the official WebMIDI path and any
- * retained non-official transports.
+ * Future normalization context shared across transports and controller profiles.
  *
  * @typedef {Object} NormalizationContext
  * @property {string=} profileId
@@ -16,7 +15,7 @@ export const normalizationStages = Object.freeze([
  */
 
 /**
- * Result envelope for the current profile-driven normalization path.
+ * Result envelope for future controller-layer normalization.
  *
  * @typedef {Object} NormalizationResult
  * @property {import('./contracts.js').NormalizedInputEvent[]} events
@@ -26,33 +25,6 @@ export const normalizationStages = Object.freeze([
 function freezeContext(context) {
   if (!context || typeof context !== 'object') return null;
   return Object.freeze({ ...context });
-}
-
-function normalizeDeckSide(side) {
-  const value = String(side || '').trim().toLowerCase();
-  return value === 'left' || value === 'right' ? value : null;
-}
-
-function freezeFeel(feel) {
-  if (!feel || typeof feel !== 'object') return null;
-  const motion = feel.motion && typeof feel.motion === 'object'
-    ? Object.freeze({ ...feel.motion })
-    : null;
-  return Object.freeze({
-    ...feel,
-    motion,
-  });
-}
-
-function resolveSemanticValue(rawEvent, feel) {
-  const rawValue = Number(rawEvent && rawEvent.value || 0);
-  if (!feel || typeof feel !== 'object') return rawValue;
-  if (feel.mode === 'jog') {
-    return feel.motion && feel.motion.vel != null
-      ? Number(feel.motion.vel)
-      : rawValue;
-  }
-  return feel.value != null ? Number(feel.value) : rawValue;
 }
 
 /**
@@ -77,9 +49,7 @@ function resolveSemanticValue(rawEvent, feel) {
 export function createRawInputEvent(details) {
   const transport = details && details.transport || 'midi';
   const interaction = details && details.interaction || 'unknown';
-  const timestamp = details && details.timestamp != null
-    ? Number(details.timestamp)
-    : Date.now();
+  const timestamp = details && details.timestamp || Date.now();
   const bytes = Array.isArray(details && details.bytes)
     ? details.bytes.slice()
     : Array.from((details && details.bytes) || []);
@@ -121,14 +91,11 @@ export function createRawInputEvent(details) {
  */
 export function createNormalizedInputEvent(rawEvent, options) {
   const binding = options && options.binding || null;
-  const feel = options && options.feel || null;
   const interaction = rawEvent && rawEvent.interaction || 'unknown';
   const channel = Number(rawEvent && rawEvent.channel || 0);
   const code = Number(rawEvent && rawEvent.code || 0);
   const data1 = rawEvent && rawEvent.data1 != null ? Number(rawEvent.data1) : code;
-  const compatValue = Number(rawEvent && rawEvent.value || 0);
-  const semanticValue = resolveSemanticValue(rawEvent, feel);
-  const data2 = rawEvent && rawEvent.data2 != null ? Number(rawEvent.data2) : compatValue;
+  const data2 = rawEvent && rawEvent.data2 != null ? Number(rawEvent.data2) : Number(rawEvent && rawEvent.value || 0);
   const mapped = !!binding;
   const base = {
     eventType: 'normalized_input',
@@ -145,15 +112,12 @@ export function createNormalizedInputEvent(rawEvent, options) {
     interaction,
     channel,
     code,
-    value: compatValue,
-    compatValue,
-    semanticValue,
+    value: Number(rawEvent && rawEvent.value || 0),
     data1,
     data2,
     key: rawEvent && rawEvent.key,
     timestamp: rawEvent && rawEvent.timestamp,
     raw: rawEvent,
-    feel: freezeFeel(feel),
     type: interaction,
     ch: channel,
     d1: data1,
@@ -188,25 +152,6 @@ export function matchesInputBinding(rawEvent, binding) {
   return true;
 }
 
-function matchesBindingActivation(binding, controllerState) {
-  const activation = binding && binding.activation;
-  if (!activation || typeof activation !== 'object') return true;
-  if (!controllerState || typeof controllerState !== 'object') return true;
-
-  if (activation.jogTouch != null) {
-    const side = normalizeDeckSide(activation.side);
-    if (!side) return false;
-    const jogTouch = !!(
-      controllerState
-      && controllerState.jogTouch
-      && controllerState.jogTouch[side]
-    );
-    if (jogTouch !== !!activation.jogTouch) return false;
-  }
-
-  return true;
-}
-
 /**
  * Returns all profile mappings that match a raw input event.
  *
@@ -214,15 +159,11 @@ function matchesBindingActivation(binding, controllerState) {
  * @param {import('../profiles/definition.js').ControllerProfileDefinition=} profile
  * @returns {import('../profiles/definition.js').InputControlBinding[]}
  */
-export function findProfileInputBindings(rawEvent, profile, context) {
+export function findProfileInputBindings(rawEvent, profile) {
   const bindings = Array.isArray(profile && profile.inputs && profile.inputs.mappings)
     ? profile.inputs.mappings
     : [];
-  const controllerState = context && context.controllerState || null;
-  return bindings.filter((binding) =>
-    matchesInputBinding(rawEvent, binding)
-    && matchesBindingActivation(binding, controllerState)
-  );
+  return bindings.filter((binding) => matchesInputBinding(rawEvent, binding));
 }
 
 /**
@@ -235,23 +176,10 @@ export function findProfileInputBindings(rawEvent, profile, context) {
  */
 export function normalizeRawInputEvent(rawEvent, context) {
   const profile = context && context.profile;
-  const controllerState = context && context.controllerState || null;
-  const allBindings = Array.isArray(profile && profile.inputs && profile.inputs.mappings)
-    ? profile.inputs.mappings
-    : [];
-  const addressBindings = allBindings.filter((binding) => matchesInputBinding(rawEvent, binding));
-  const bindings = addressBindings.filter((binding) => matchesBindingActivation(binding, controllerState));
+  const bindings = findProfileInputBindings(rawEvent, profile);
   const profileId = context && context.profileId || rawEvent && rawEvent.profileId || profile && profile.id;
   const sourceId = context && context.sourceId || rawEvent && rawEvent.sourceId;
   const deviceName = rawEvent && rawEvent.deviceName;
-  const feelRuntime = context && context.feelRuntime || null;
-
-  if (addressBindings.length && !bindings.length) {
-    return {
-      events: [],
-      warnings: [`suppressed:${rawEvent && rawEvent.key || 'unknown'}`],
-    };
-  }
 
   if (!bindings.length) {
     return {
@@ -273,9 +201,6 @@ export function normalizeRawInputEvent(rawEvent, context) {
         profileId,
         sourceId,
         deviceName,
-        feel: feelRuntime && typeof feelRuntime.processBinding === 'function'
-          ? feelRuntime.processBinding(rawEvent, binding, controllerState)
-          : null,
       })
     ),
     warnings: [],
@@ -283,9 +208,8 @@ export function normalizeRawInputEvent(rawEvent, context) {
 }
 
 /**
- * Reserved fallback entrypoint for non-official transport experiments.
- * The supported app path already uses createRawInputEvent() and
- * normalizeRawInputEvent() through the WebMIDI adapter.
+ * Placeholder entrypoint for future controller-layer normalization.
+ * Existing behavior still lives in the current runtime modules.
  *
  * @param {import('./contracts.js').RawPacket} packet
  * @param {NormalizationContext=} context

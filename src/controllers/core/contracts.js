@@ -1,8 +1,3 @@
-// Shared controller contracts for the official runtime lane:
-// host.html -> src/midi.js -> browser WebMIDI -> src/controllers -> DDJ-FLX6.
-// HID and virtual transports stay available for compatibility and experiments,
-// but they are not the supported default app path today.
-
 export const controllerEventKinds = Object.freeze([
   'cc',
   'noteon',
@@ -22,71 +17,6 @@ export const controllerRoles = Object.freeze([
   'viewer',
   'unknown',
 ]);
-
-/**
- * Explicit truth descriptor used by the rewritten middle architecture.
- *
- * @typedef {Object} ControllerTruthValue
- * @property {unknown=} value
- * @property {'official'|'inferred'|'unknown'|'blocked'} status
- * @property {string} source
- * @property {number|null=} observedAt
- * @property {string|null=} note
- * @property {Object|null=} meta
- */
-
-/**
- * One matched official binding snapshot carried forward with the event.
- *
- * @typedef {Object} MatchedBindingSnapshot
- * @property {string|null=} id
- * @property {string|null=} label
- * @property {string|null=} canonicalTarget
- * @property {string|null=} rawTarget
- * @property {Object|null=} context
- * @property {('absolute'|'delta'|'binary')|undefined=} valueShape
- * @property {string|null=} note
- */
-
-/**
- * Semantic meaning resolved after controller state updates.
- *
- * @typedef {Object} SemanticResolution
- * @property {string} family
- * @property {string} action
- * @property {string} meaning
- * @property {'official'|'inferred'|'unknown'|'blocked'} truthStatus
- * @property {{ surfaceSide?: 'left'|'right'|null, owner?: { deckNumber?: number|null, deckLayer?: string|null, status?: string, source?: string, pairedDecks?: number[] }, binding?: { deckNumber?: number|null, deckLayer?: string|null }, padMode?: ControllerTruthValue, vinylMode?: ControllerTruthValue, vinylModeButton?: ControllerTruthValue, jogCutter?: ControllerTruthValue, jogCutterButton?: ControllerTruthValue, channel4Input?: ControllerTruthValue }=} deckContext
- * @property {{ canonicalTarget?: string|null, mappingId?: string|null, targetId?: string|null, allowMissingTarget?: boolean }=} renderTargetHint
- */
-
-/**
- * Explicit render-target resolution kept separate from semantic meaning.
- *
- * @typedef {Object} RenderTargetResolution
- * @property {string|null=} targetId
- * @property {string|null=} canonicalTarget
- * @property {string|null=} mappingId
- * @property {'official'|'inferred'|'unknown'|'blocked'} truthStatus
- * @property {string} source
- */
-
-/**
- * Debug payload that carries the full truth chain forward.
- *
- * @typedef {Object} ControllerDebugEvent
- * @property {'controller_debug_resolution'} eventType
- * @property {string|null=} profileId
- * @property {'official'|'inferred'|'unknown'|'blocked'} truthStatus
- * @property {{ deckOwnership?: { side?: string|null, binding?: { deckNumber?: number|null, deckLayer?: string|null }, compatibilityDeckLayerBefore?: string|null, compatibilityDeckLayerAfter?: string|null, before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }|null, padMode?: { side?: string|null, compatibilityValueBefore?: string|null, compatibilityValueAfter?: string|null, before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }|null, vinylMode?: { side?: string|null, lane?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }, mode?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }, button?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null } }|null, jogCutter?: { side?: string|null, enabled?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }, button?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null } }|null, channel4Selector?: { targetId?: string|null, before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }|null, beatFx?: { unit?: number|null, slotContext?: number|null, channelContext?: string|null, targetId?: string|null, compatibilityBefore?: { selectedSlot?: number|null, selectedChannel?: string|null, enabled?: boolean|null, levelDepth?: number|null }, compatibilityAfter?: { selectedSlot?: number|null, selectedChannel?: string|null, enabled?: boolean|null, levelDepth?: number|null }, selectedSlot?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }, selectedChannel?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }, enabled?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null }, levelDepth?: { before?: ControllerTruthValue|null, after?: ControllerTruthValue|null } }|null }=} truthFocus
- * @property {string|null=} truthSummary
- * @property {{ key?: string, interaction?: string, channel?: number, code?: number, value?: number, timestamp?: number, transport?: string, bytes?: number[] }=} rawLane
- * @property {MatchedBindingSnapshot|null=} binding
- * @property {Object|null=} stateBefore
- * @property {Object|null=} stateAfter
- * @property {SemanticResolution|null=} semantic
- * @property {RenderTargetResolution|null=} render
- */
 
 /**
  * Raw packet captured from a transport before app-specific translation.
@@ -155,15 +85,6 @@ export const controllerRoles = Object.freeze([
  * @property {string=} key
  * @property {number=} timestamp
  * @property {RawInputEvent=} raw
- * @property {number=} compatValue
- * @property {number=} semanticValue
- * @property {{ applied?: boolean, accepted?: boolean, blocked?: boolean, mode?: string, instanceId?: string, configKey?: string, value?: number, delta?: number, motion?: { vel?: number, pos?: number } }|null=} feel
- * @property {MatchedBindingSnapshot|null=} matchedBinding
- * @property {SemanticResolution|null=} semantic
- * @property {RenderTargetResolution|null=} render
- * @property {ControllerDebugEvent|null=} debug
- * @property {'official'|'inferred'|'unknown'|'blocked'=} truthStatus
- * @property {string|null=} resolvedRenderTarget
  * @property {'cc'|'noteon'|'noteoff'|'pitch'|'unknown'} type
  * @property {number} ch
  * @property {number=} d1
