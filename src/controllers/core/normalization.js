@@ -49,7 +49,9 @@ function freezeContext(context) {
 export function createRawInputEvent(details) {
   const transport = details && details.transport || 'midi';
   const interaction = details && details.interaction || 'unknown';
-  const timestamp = details && details.timestamp || Date.now();
+  const timestamp = details && details.timestamp != null
+    ? Number(details.timestamp)
+    : Date.now();
   const bytes = Array.isArray(details && details.bytes)
     ? details.bytes.slice()
     : Array.from((details && details.bytes) || []);
