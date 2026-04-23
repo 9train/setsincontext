@@ -7,7 +7,30 @@ This app is a browser-based visualizer for a Pioneer DDJ-FLX6. It has two main p
 - `host.html`: reads MIDI from the controller, draws the board locally, and relays controller events over WebSocket
 - `viewer.html`: shows the same board state remotely by listening over WebSocket
 
-Right now, the app is also the home of the newer controller system that is being built inside `src/controllers/`. Parts of that newer system are already real, tested, and used by the host MIDI path. Other parts are still in progress and have not replaced the whole runtime yet.
+The supported development lane is now centered on `src/controllers/`. That controller layer is the official place for ongoing controller work, and the shipped DDJ-FLX6 profile is the default/demo controller for the live app path.
+
+## Official App Path
+
+When future work needs a default target, use this lane:
+
+- `host.html` for the host page
+- `viewer.html` for the viewer page
+- Browser WebMIDI through `src/midi.js` and `src/controllers/adapters/web-midi.js`
+- The controller layer under `src/controllers/`
+- The `pioneer-ddj-flx6` profile as the default and main demo controller
+
+`index.html` is only a small launcher/redirect into that runtime. It is not a separate app path.
+
+## Legacy / Experimental Paths
+
+These files remain in the repo, but they are not the official runtime lane:
+
+- `public/index.html` and `src/main.js` are retained legacy/demo bootstraps
+- `src/host-midi.js` is an older alternate browser WebMIDI helper
+- `src/wsClient.js` and `src/legacy/wsClient.js` are compatibility WebSocket clients, not the main one
+- `server/midi-bridge.js` and `server/hid.js` are optional older Node-side bridge paths
+- `src/app-boot.js` and `src/events.js` are experimental FEEL/editor hooks
+- The learned-map storage path in `src/mapper.js` and `src/wizard.js` is a board-renderer compatibility layer, not the source of truth for controller profiles
 
 ## What The App Does Right Now
 
@@ -152,16 +175,26 @@ http://localhost:8080/host.html?ws=ws://localhost:8787&room=studio-a&midi=DDJ-FL
 Run the current focused test suite with:
 
 ```bash
-node --test tests/*.test.js
-```
-
-Important: the `npm test` script in this repo is still a legacy decode helper:
-
-```bash
 npm test
 ```
 
-That command runs `src/testDecode.js`. It is not the main multi-file test suite.
+That currently runs the same suite as:
+
+```bash
+npm run test:unit
+```
+
+Run only the room-join integration coverage with:
+
+```bash
+npm run test:room-join
+```
+
+Equivalent direct command:
+
+```bash
+node --test tests/server-room-join.test.js
+```
 
 ### Manual Test With Real Hardware
 
@@ -396,9 +429,12 @@ One important caution: the repo still has some older and experimental paths. The
 
 - `host.html`
 - `viewer.html`
+- `index.html` only as a launcher/redirect into those pages
 - `src/midi.js`
+- `src/controllers/`
 - `src/bootstrap-host.js`
 - `src/bootstrap-viewer.js`
 - `src/ws.js`
+- `src/controllers/profiles/ddj-flx6.js`
 
 Other files in the repo can still be useful, but they are not the main path this README is describing.

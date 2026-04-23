@@ -12,6 +12,7 @@ import {
   flx6OutputBindings,
   flx6OutputTargets,
 } from './ddj-flx6.outputs.js';
+import { flx6Ui } from './ddj-flx6.ui.js';
 
 export const flx6Profile = defineControllerProfile({
   id: 'pioneer-ddj-flx6',
@@ -19,7 +20,7 @@ export const flx6Profile = defineControllerProfile({
   manufacturer: 'Pioneer DJ',
   model: 'DDJ-FLX6',
   profileVersion: 'draft-1',
-  summary: 'Official DDJ-FLX6 controller-profile entry for the app runtime, with profile-driven input mappings, shared controller state, normalized relay support, and the first transport LED output pass.',
+  summary: 'Official DDJ-FLX6 controller-profile entry for the app runtime, with profile-driven input mappings, shared controller state, normalized relay support, and a focused high-value FLX6 LED output pass.',
   match: {
     names: ['DDJ-FLX6', 'Pioneer DDJ-FLX6'],
     namePatterns: [/DDJ[-\s]?FLX6/i, /Pioneer.*FLX6/i],
@@ -68,7 +69,7 @@ export const flx6Profile = defineControllerProfile({
       'beatjump_',
       'beatsync_',
     ],
-    padModes: ['hotcue', 'sampler', 'beatjump', 'fx'],
+    padModes: ['hotcue', 'fx', 'beatjump', 'sampler', 'keyboard', 'key_shift', 'beat_loop', 'sample_scratch'],
     deckLayers: ['main', 'alternate'],
   },
   defaults: {
@@ -76,19 +77,18 @@ export const flx6Profile = defineControllerProfile({
     preferredOutputName: 'DDJ-FLX6',
     adapterId: 'generic-web-midi',
     outputId: 'generic-web-midi',
-    defaultPadMode: 'hotcue',
     defaultDeckLayer: 'main',
   },
   state: {
-    padModes: ['hotcue', 'sampler', 'beatjump', 'fx'],
+    padModes: ['hotcue', 'fx', 'beatjump', 'sampler', 'keyboard', 'key_shift', 'beat_loop', 'sample_scratch'],
     deckLayers: ['main', 'alternate'],
-    defaultPadMode: 'hotcue',
     defaultDeckLayer: 'main',
   },
   aliases: {
     controls: flx6CanonicalAliases,
     surfaceTargets: flx6CanonicalAliases,
   },
+  ui: flx6Ui,
   inputs: {
     adapterId: 'generic-web-midi',
     transports: ['midi'],
@@ -110,7 +110,7 @@ export const flx6Profile = defineControllerProfile({
     },
     hooks: flx6RuntimeHooks,
   },
-  notes: `This is the official FLX6 runtime profile in the controller layer. It carries canonical aliases, prioritized raw input mappings, shared runtime hooks, and the first profile-driven LED output bindings. Raw targets currently covered here: ${flx6MappedRawTargets.join(', ')}. Output targets currently covered here: ${flx6OutputTargets.join(', ')}. Board SVG ids and local learned-map storage still remain as transitional compatibility layers while the renderer stays FLX6-specific.`,
+  notes: `This is the official FLX6 runtime profile in the controller layer. It carries canonical aliases, prioritized raw input mappings, shared runtime hooks, and focused profile-driven FLX6 LED output bindings. Raw targets currently covered here: ${flx6MappedRawTargets.join(', ')}. Output targets currently covered here: ${flx6OutputTargets.join(', ')}. Board SVG ids and local learned-map storage still remain as transitional compatibility layers while the renderer stays FLX6-specific.`,
 });
 
 export function matchesFlx6InputDevice(deviceName, transport = 'midi') {

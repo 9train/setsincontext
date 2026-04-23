@@ -1,5 +1,6 @@
 import { createAdapterInputHub } from './boundary.js';
 import { createControllerScriptRuntime } from '../core/hooks.js';
+import { createControllerFeelRuntime } from '../core/feel.js';
 import { createRawInputEvent, normalizeRawInputEvent } from '../core/normalization.js';
 import { matchControllerProfile } from '../profiles/index.js';
 
@@ -8,7 +9,7 @@ export const WEB_MIDI_ADAPTER_ID = 'generic-web-midi';
 /**
  * Concrete WebMIDI adapter shape used by the current host runtime.
  * This extends the shared device-adapter contract with a few WebMIDI-specific
- * helpers that the legacy host boot path still needs during the migration.
+ * helpers that the official host boot path and compatibility tools still need.
  *
  * @typedef {import('./boundary.js').DeviceAdapter & {
  *   listInputs: () => string[],
@@ -19,6 +20,8 @@ export const WEB_MIDI_ADAPTER_ID = 'generic-web-midi';
  *   getSelectedInput: () => MIDIInput|null,
  *   getSelectedOutput: () => MIDIOutput|null,
  *   getControllerState: () => import('../core/state.js').ControllerState|null,
+ *   getFeelState: () => object|null,
+ *   onFeelStateChange: (callback: (state: object) => void) => () => void,
  * }} WebMidiAdapter
  */
 
@@ -32,6 +35,7 @@ export const WEB_MIDI_ADAPTER_ID = 'generic-web-midi';
  * @property {() => number=} now
  * @property {(deviceName?: string, transport?: 'midi', meta?: object) => import('../profiles/definition.js').ControllerProfileDefinition|null=} resolveProfile
  * @property {(options?: MIDIAccessOptions) => Promise<MIDIAccess>=} requestMIDIAccess
+ * @property {(options?: { deviceName?: string, fallbackUrl?: string }) => Promise<object>=} loadFeelConfig
  */
 
 function toArray(iter) {
@@ -281,6 +285,9 @@ export function createWebMidiAdapter(options) {
   let messageHandler = null;
   let scriptRuntime = null;
   let scriptRuntimeKey = '';
+  const feelRuntime = createControllerFeelRuntime({
+    loadFeelConfig: opts.loadFeelConfig,
+  });
 
   function listInputPorts() {
     return toArray(access && access.inputs && access.inputs.values && access.inputs.values());
@@ -360,6 +367,15 @@ export function createWebMidiAdapter(options) {
     return scriptRuntime;
   }
 
+  async function syncFeelProfile(currentProfile) {
+    try {
+      return await feelRuntime.syncProfile(currentProfile, input && input.name || output && output.name || '');
+    } catch (error) {
+      log('[WebMIDI] FEEL sync failed', error);
+      return feelRuntime.getState();
+    }
+  }
+
   function attachInput(nextInput) {
     try {
       if (input && input.onmidimessage === messageHandler) input.onmidimessage = null;
@@ -387,6 +403,7 @@ export function createWebMidiAdapter(options) {
     }
     attachInput(next);
     if (!output) attachOutput(pickOutput(listOutputPorts(), opts.preferredOutput, next && next.name));
+    syncFeelProfile(profile);
     syncScriptRuntime(profile);
     onStatus(`listening:${next.name}`);
     log('[WebMIDI] Switched to:', next.name);
@@ -400,6 +417,7 @@ export function createWebMidiAdapter(options) {
       return false;
     }
     attachOutput(next);
+    syncFeelProfile(profile);
     syncScriptRuntime(profile);
     log('[WebMIDI] Output set to:', next.name);
     return true;
@@ -420,23 +438,46 @@ export function createWebMidiAdapter(options) {
     });
     if (!rawEvent) return;
 
+    const currentScript = syncScriptRuntime(currentProfile);
+    const previousState = currentScript && currentScript.snapshotState
+      ? currentScript.snapshotState()
+      : null;
     const result = normalizeRawInputEvent(rawEvent, {
       profile: currentProfile,
       profileId: currentProfile && currentProfile.id,
       sourceId: rawEvent.sourceId,
       timestamp: rawEvent.timestamp,
+      feelRuntime,
+      controllerState: currentScript && currentScript.getState
+        ? currentScript.getState()
+        : null,
     });
-    const currentScript = syncScriptRuntime(currentProfile);
 
+    let inputResult = null;
     try {
-      if (currentScript) currentScript.handleInput(rawEvent, result && result.events || []);
+      if (currentScript) inputResult = currentScript.handleInput(rawEvent, result && result.events || []);
     } catch (error) {
       log('[WebMIDI] script input failed', error);
     }
 
+    const emittedEvents = Array.isArray(inputResult && inputResult.events) && inputResult.events.length
+      ? inputResult.events
+      : result && result.events || [];
+
+    try {
+      feelRuntime.dispatchControllerState({
+        previousState,
+        nextState: currentScript && currentScript.snapshotState
+          ? currentScript.snapshotState()
+          : null,
+      });
+    } catch (error) {
+      log('[WebMIDI] FEEL dispatch failed', error);
+    }
+
     inputHub.emit({
       raw: rawEvent,
-      normalized: result && result.events || [],
+      normalized: emittedEvents,
       device: deviceInfo,
       profile: currentProfile,
       controllerState: currentScript && currentScript.snapshotState
@@ -499,6 +540,7 @@ export function createWebMidiAdapter(options) {
       if (!inputs.length) {
         attachInput(null);
         attachOutput(pickOutput(outputs, opts.preferredOutput, ''));
+        await syncFeelProfile(profile);
         onStatus('no-inputs');
         try { console.warn('[WebMIDI] No MIDI inputs found.'); } catch (e) {}
         return deviceInfo;
@@ -515,6 +557,7 @@ export function createWebMidiAdapter(options) {
 
       attachInput(nextInput);
       attachOutput(pickOutput(outputs, opts.preferredOutput, nextInput && nextInput.name));
+      await syncFeelProfile(profile);
       syncScriptRuntime(profile);
       onStatus(`listening:${nextInput.name}`);
       log('[WebMIDI] Listening on:', nextInput.name);
@@ -542,6 +585,7 @@ export function createWebMidiAdapter(options) {
       deviceInfo = null;
       stateHandler = null;
       shutdownScriptRuntime();
+      syncFeelProfile(null);
 
       onStatus(reason === 'stopped' ? 'stopped' : 'disconnected');
       log('[WebMIDI] Stopped');
@@ -608,6 +652,12 @@ export function createWebMidiAdapter(options) {
       return scriptRuntime && scriptRuntime.snapshotState
         ? scriptRuntime.snapshotState()
         : null;
+    },
+    getFeelState() {
+      return feelRuntime.getState();
+    },
+    onFeelStateChange(callback) {
+      return feelRuntime.onChange(callback);
     },
   };
 }
