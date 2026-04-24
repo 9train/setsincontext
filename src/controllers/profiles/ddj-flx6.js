@@ -1,0 +1,140 @@
+import { defineControllerProfile } from './definition.js';
+import { flx6CanonicalAliases } from './ddj-flx6.aliases.js';
+import {
+  flx6InputMappings,
+  flx6InputNormalization,
+  flx6MappedRawTargets,
+} from './ddj-flx6.mappings.js';
+import {
+  flx6RuntimeHooks,
+} from './ddj-flx6.script.js';
+import {
+  flx6OutputBindings,
+  flx6OutputTargets,
+} from './ddj-flx6.outputs.js';
+import { flx6Ui } from './ddj-flx6.ui.js';
+
+export const flx6Profile = defineControllerProfile({
+  id: 'pioneer-ddj-flx6',
+  displayName: 'Pioneer DDJ-FLX6',
+  manufacturer: 'Pioneer DJ',
+  model: 'DDJ-FLX6',
+  profileVersion: 'draft-1',
+  summary: 'Official DDJ-FLX6 controller-profile entry for the app runtime, with profile-driven input mappings, shared controller state, normalized relay support, and a focused high-value FLX6 LED output pass.',
+  match: {
+    names: ['DDJ-FLX6', 'Pioneer DDJ-FLX6'],
+    namePatterns: [/DDJ[-\s]?FLX6/i, /Pioneer.*FLX6/i],
+    manufacturers: ['Pioneer DJ', 'AlphaTheta'],
+    manufacturerPatterns: [/Pioneer/i, /AlphaTheta/i],
+    inputNames: ['DDJ-FLX6'],
+    outputNames: ['DDJ-FLX6'],
+    transports: ['midi'],
+  },
+  assets: {
+    boardSvgPath: '/assets/board.svg',
+    defaultMapPath: '/flx6_map.json',
+    feelConfigPath: '/maps/flx6-feel.json',
+  },
+  capabilities: {
+    input: true,
+    output: true,
+    learn: true,
+    remoteView: true,
+    transports: ['midi'],
+    deckSides: ['left', 'right'],
+    mixerChannels: [1, 2, 3, 4],
+    padSlots: [1, 2, 3, 4, 5, 6, 7, 8],
+    hotcueSlots: [1, 2, 3, 4, 5, 6, 7, 8],
+    samplerSlots: [1, 2, 3, 4, 5, 6, 7, 8],
+    fxUnits: [1, 2],
+  },
+  controlHints: {
+    jogTargets: ['jog_L', 'jog_R'],
+    linearTargets: [
+      'slider_ch1',
+      'slider_ch2',
+      'slider_ch3',
+      'slider_ch4',
+      'slider_TEMPO_L',
+      'slider_TEMPO_R',
+      'xfader_slider',
+    ],
+    buttonPrefixes: [
+      'play_',
+      'cue_',
+      'pad_',
+      'hotcue_',
+      'padfx_',
+      'sampler_',
+      'beatjump_',
+      'beatsync_',
+    ],
+    padModes: ['hotcue', 'fx', 'beatjump', 'sampler', 'keyboard', 'key_shift', 'beat_loop', 'sample_scratch'],
+    deckLayers: ['main', 'alternate'],
+  },
+  defaults: {
+    preferredInputName: 'DDJ-FLX6',
+    preferredOutputName: 'DDJ-FLX6',
+    adapterId: 'generic-web-midi',
+    outputId: 'generic-web-midi',
+    defaultDeckLayer: 'main',
+  },
+  state: {
+    padModes: ['hotcue', 'fx', 'beatjump', 'sampler', 'keyboard', 'key_shift', 'beat_loop', 'sample_scratch'],
+    deckLayers: ['main', 'alternate'],
+    defaultDeckLayer: 'main',
+  },
+  aliases: {
+    controls: flx6CanonicalAliases,
+    surfaceTargets: flx6CanonicalAliases,
+  },
+  ui: flx6Ui,
+  inputs: {
+    adapterId: 'generic-web-midi',
+    transports: ['midi'],
+    mappings: flx6InputMappings,
+    normalization: flx6InputNormalization,
+  },
+  outputs: {
+    outputId: 'generic-web-midi',
+    transports: ['midi'],
+    bindings: flx6OutputBindings,
+  },
+  runtime: {
+    init: {
+      steps: [],
+    },
+    keepalive: {
+      enabled: false,
+      steps: [],
+    },
+    hooks: flx6RuntimeHooks,
+  },
+  notes: `This is the official FLX6 runtime profile in the controller layer. It carries canonical aliases, prioritized raw input mappings, shared runtime hooks, and focused profile-driven FLX6 LED output bindings. Raw targets currently covered here: ${flx6MappedRawTargets.join(', ')}. Output targets currently covered here: ${flx6OutputTargets.join(', ')}. Board SVG ids and local learned-map storage still remain as transitional compatibility layers while the renderer stays FLX6-specific.`,
+});
+
+export function matchesFlx6InputDevice(deviceName, transport = 'midi') {
+  const match = flx6Profile.match || {};
+  const name = String(deviceName || '');
+  const normalizedName = name.trim().toLowerCase();
+
+  if (Array.isArray(match.transports) && match.transports.length && !match.transports.includes(transport)) {
+    return false;
+  }
+
+  if (Array.isArray(match.names) && match.names.some((entry) => String(entry || '').trim().toLowerCase() === normalizedName)) {
+    return true;
+  }
+
+  if (Array.isArray(match.inputNames) && match.inputNames.some((entry) => String(entry || '').trim().toLowerCase() === normalizedName)) {
+    return true;
+  }
+
+  if (Array.isArray(match.namePatterns) && match.namePatterns.some((pattern) => pattern && pattern.test && pattern.test(name))) {
+    return true;
+  }
+
+  return false;
+}
+
+export default flx6Profile;
