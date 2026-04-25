@@ -38,6 +38,7 @@ async function startServer({ maps = {} } = {}) {
   const wsPort = await getFreePort();
   const mapDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flx6-room-join-'));
   const mapFile = path.join(mapDir, 'room_maps.json');
+  const sessionStoreFile = path.join(mapDir, 'sessions.json');
   await fs.writeFile(mapFile, JSON.stringify(maps), 'utf8');
 
   const child = spawn(process.execPath, [SERVER_ENTRY], {
@@ -47,6 +48,7 @@ async function startServer({ maps = {} } = {}) {
       PORT: String(port),
       WSPORT: String(wsPort),
       MAP_FILE: mapFile,
+      SESSION_STORE_FILE: sessionStoreFile,
       NODE_ENV: 'development',
       HID_ENABLED: '0',
       MIDI_INPUT: '',
@@ -96,11 +98,43 @@ async function startServer({ maps = {} } = {}) {
   return {
     port,
     wsPort,
+    sessionStoreFile,
     async stop() {
       await cleanup();
     },
     logs: () => logs,
   };
+}
+
+async function readSessionStore(server) {
+  try {
+    const text = await fs.readFile(server.sessionStoreFile, 'utf8');
+    return JSON.parse(text || '{}');
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return { sessions: [], participants: [], invites: [] };
+    }
+    throw error;
+  }
+}
+
+async function waitForSessionStore(server, predicate, { timeoutMs = 3000, intervalMs = 20 } = {}) {
+  const started = Date.now();
+  let latest = null;
+  while ((Date.now() - started) < timeoutMs) {
+    latest = await readSessionStore(server);
+    if (predicate(latest)) return latest;
+    await delay(intervalMs);
+  }
+  throw new Error(`timed out waiting for session store condition\n${JSON.stringify(latest, null, 2)}`);
+}
+
+function assertPublicPayloadHasNoPrivateFields(payload) {
+  const text = JSON.stringify(payload);
+  assert.equal(text.includes('viewerName'), false);
+  assert.equal(text.includes('viewerEmail'), false);
+  assert.equal(text.includes('tokenHash'), false);
+  assert.equal(text.includes('hostAccess'), false);
 }
 
 async function sendMalformedHttp(port, payload = 'THIS IS NOT HTTP\r\n\r\n') {
@@ -409,6 +443,28 @@ test('host joins create session records and viewer joins attach without exposing
     host.ws.send(JSON.stringify({ type: 'join', role: 'host', room: 'alpha', ...hostMeta }));
     await waitFor(() => host.messages.some((msg) => msg.type === 'presence' && msg.room === 'alpha'));
 
+    let storeState = await waitForSessionStore(server, (state) => (
+      state.sessions?.some((session) => session.room === 'alpha' && session.hostCount === 1) &&
+      state.participants?.some((participant) => participant.room === 'alpha' && participant.role === 'host')
+    ));
+    let durableSession = storeState.sessions.find((session) => session.room === 'alpha');
+    let hostParticipant = storeState.participants.find((participant) => (
+      participant.sessionId === durableSession.sessionId &&
+      participant.room === 'alpha' &&
+      participant.role === 'host'
+    ));
+    assert.equal(durableSession.visibility, 'public');
+    assert.equal(durableSession.ownerUserId, null);
+    assert.equal(hostParticipant.userId, null);
+    assert.equal(Boolean(hostParticipant.anonymousId), true);
+    assert.equal(Boolean(hostParticipant.joinedAt), true);
+    assert.equal(Boolean(hostParticipant.lastSeenAt), true);
+    assert.equal(hostParticipant.disconnectedAt, null);
+
+    let resolveResponse = await fetch(`http://127.0.0.1:${server.port}/api/sessions/resolve?key=alpha`);
+    assert.equal(resolveResponse.status, 200);
+    assertPublicPayloadHasNoPrivateFields(await resolveResponse.json());
+
     let response = await fetch(`http://127.0.0.1:${server.port}/api/sessions/alpha`);
     assert.equal(response.status, 200);
 
@@ -450,6 +506,25 @@ test('host joins create session records and viewer joins attach without exposing
       viewerEmail: 'ada@example.com',
     }));
     await waitFor(() => host.messages.some((msg) => msg.type === 'presence' && msg.room === 'alpha' && msg.viewers === 1));
+    assertPublicPayloadHasNoPrivateFields(host.messages);
+    assertPublicPayloadHasNoPrivateFields(viewer.messages);
+
+    storeState = await waitForSessionStore(server, (state) => (
+      state.participants?.some((participant) => (
+        participant.room === 'alpha' &&
+        participant.role === 'viewer' &&
+        participant.displayName === 'Ada' &&
+        participant.email === 'ada@example.com' &&
+        participant.disconnectedAt === null
+      ))
+    ));
+    durableSession = storeState.sessions.find((session) => session.room === 'alpha');
+    const viewerParticipant = storeState.participants.find((participant) => (
+      participant.sessionId === durableSession.sessionId &&
+      participant.room === 'alpha' &&
+      participant.role === 'viewer'
+    ));
+    assert.equal(viewerParticipant.userId, null);
 
     response = await fetch(`http://127.0.0.1:${server.port}/api/sessions/alpha`);
     assert.equal(response.status, 200);
@@ -469,9 +544,24 @@ test('host joins create session records and viewer joins attach without exposing
     const listPayload = await listResponse.json();
     assert.equal(Array.isArray(listPayload.sessions), true);
     assert.equal(listPayload.sessions.some((session) => session.room === 'alpha' && session.viewerCount === 1), true);
+    assertPublicPayloadHasNoPrivateFields(listPayload);
 
     await closeClient(viewer.ws);
     await closeClient(host.ws);
+    storeState = await waitForSessionStore(server, (state) => (
+      state.sessions?.some((session) => session.room === 'alpha' && session.status === 'ended' && session.endedAt) &&
+      state.participants?.filter((participant) => participant.room === 'alpha')
+        .every((participant) => participant.disconnectedAt)
+    ));
+    durableSession = storeState.sessions.find((session) => session.room === 'alpha');
+    assert.equal(durableSession.status, 'ended');
+    assert.equal(Boolean(durableSession.endedAt), true);
+
+    resolveResponse = await fetch(`http://127.0.0.1:${server.port}/api/sessions/resolve?key=alpha`);
+    assert.equal(resolveResponse.status, 200);
+    const endedResolvePayload = await resolveResponse.json();
+    assert.equal(endedResolvePayload.status, 'ended');
+    assertPublicPayloadHasNoPrivateFields(endedResolvePayload);
   } finally {
     await server.stop();
   }
@@ -606,6 +696,14 @@ test('private sessions require a valid invite for resolve and websocket viewer j
     }));
     await waitFor(() => host.messages.some((msg) => msg.type === 'presence' && msg.room === 'gamma'));
 
+    let storeState = await waitForSessionStore(server, (state) => (
+      state.sessions?.some((session) => session.room === 'gamma' && session.visibility === 'private') &&
+      state.participants?.some((participant) => participant.room === 'gamma' && participant.role === 'host')
+    ));
+    let durableSession = storeState.sessions.find((session) => session.room === 'gamma');
+    assert.equal(durableSession.adHoc, false);
+    assert.equal(durableSession.ownerUserId, null);
+
     let response = await fetch(`http://127.0.0.1:${server.port}/api/sessions/resolve?key=gamma`);
     assert.equal(response.status, 403);
 
@@ -617,6 +715,7 @@ test('private sessions require a valid invite for resolve and websocket viewer j
       requiresAccess: true,
       key: 'gamma',
     });
+    assertPublicPayloadHasNoPrivateFields(payload);
 
     response = await fetch(`http://127.0.0.1:${server.port}/api/sessions/gamma`);
     assert.equal(response.status, 403);
@@ -629,6 +728,7 @@ test('private sessions require a valid invite for resolve and websocket viewer j
       requiresAccess: true,
       room: 'gamma',
     });
+    assertPublicPayloadHasNoPrivateFields(payload);
 
     response = await fetch(`http://127.0.0.1:${server.port}/api/sessions/gamma/invite`);
     assert.equal(response.status, 403);
@@ -640,6 +740,7 @@ test('private sessions require a valid invite for resolve and websocket viewer j
       code: 'host_access_required',
       room: 'gamma',
     });
+    assertPublicPayloadHasNoPrivateFields(payload);
 
     response = await fetch(
       `http://127.0.0.1:${server.port}/api/sessions/gamma/invite?hostAccess=${encodeURIComponent(hostAccessToken)}`,
@@ -650,12 +751,33 @@ test('private sessions require a valid invite for resolve and websocket viewer j
     assert.equal(payload.ok, true);
     assert.equal(payload.room, 'gamma');
     assert.equal(payload.visibility, 'private');
+    assertPublicPayloadHasNoPrivateFields(payload);
     const inviteUrl = new URL(payload.joinUrlPath, `http://127.0.0.1:${server.port}`);
     const viewerAccessToken = inviteUrl.searchParams.get('access');
     assert.equal(inviteUrl.pathname, '/viewer.html');
     assert.equal(inviteUrl.searchParams.get('room'), 'gamma');
     assert.equal(inviteUrl.searchParams.get('ws'), `ws://127.0.0.1:${server.wsPort}/`);
     assert.equal(Boolean(viewerAccessToken), true);
+
+    storeState = await waitForSessionStore(server, (state) => (
+      state.invites?.some((invite) => invite.room === 'gamma' && invite.type === 'host_access') &&
+      state.invites?.some((invite) => invite.room === 'gamma' && invite.type === 'viewer_invite')
+    ));
+    let viewerInvite = storeState.invites.find((invite) => (
+      invite.room === 'gamma' &&
+      invite.type === 'viewer_invite' &&
+      !invite.revokedAt
+    ));
+    const hostAccessInvite = storeState.invites.find((invite) => (
+      invite.room === 'gamma' &&
+      invite.type === 'host_access' &&
+      !invite.revokedAt
+    ));
+    assert.equal(Boolean(viewerInvite.tokenHash), true);
+    assert.equal(Boolean(hostAccessInvite.tokenHash), true);
+    assert.equal('rawToken' in viewerInvite, false);
+    assert.equal('rawToken' in hostAccessInvite, false);
+    assert.equal(viewerInvite.lastUsedAt, null);
 
     response = await fetch(
       `http://127.0.0.1:${server.port}/api/sessions/resolve?key=gamma&access=wrong-token`,
@@ -670,6 +792,15 @@ test('private sessions require a valid invite for resolve and websocket viewer j
       requiresAccess: true,
       key: 'gamma',
     });
+    assertPublicPayloadHasNoPrivateFields(payload);
+
+    storeState = await readSessionStore(server);
+    viewerInvite = storeState.invites.find((invite) => (
+      invite.room === 'gamma' &&
+      invite.type === 'viewer_invite' &&
+      !invite.revokedAt
+    ));
+    assert.equal(viewerInvite.lastUsedAt, null);
 
     response = await fetch(
       `http://127.0.0.1:${server.port}/api/sessions/resolve?key=gamma&access=${encodeURIComponent(viewerAccessToken || '')}`,
@@ -679,8 +810,24 @@ test('private sessions require a valid invite for resolve and websocket viewer j
     payload = await response.json();
     assert.equal(payload.ok, true);
     assert.equal(payload.visibility, 'private');
+    assertPublicPayloadHasNoPrivateFields(payload);
     const resolvedInviteUrl = new URL(payload.joinUrlPath, `http://127.0.0.1:${server.port}`);
     assert.equal(resolvedInviteUrl.searchParams.get('access'), viewerAccessToken);
+
+    storeState = await waitForSessionStore(server, (state) => (
+      state.invites?.some((invite) => (
+        invite.room === 'gamma' &&
+        invite.type === 'viewer_invite' &&
+        !invite.revokedAt &&
+        Boolean(invite.lastUsedAt)
+      ))
+    ));
+    viewerInvite = storeState.invites.find((invite) => (
+      invite.room === 'gamma' &&
+      invite.type === 'viewer_invite' &&
+      !invite.revokedAt
+    ));
+    const firstViewerInviteUse = viewerInvite.lastUsedAt;
 
     const deniedViewer = await openClient({
       wsPort: server.wsPort,
@@ -723,18 +870,187 @@ test('private sessions require a valid invite for resolve and websocket viewer j
       role: 'viewer',
       room: 'gamma',
       accessToken: viewerAccessToken,
+      sessionMeta: {
+        viewerName: 'Ada',
+        viewerEmail: 'ada@example.com',
+      },
     });
     invitedViewer.ws.send(JSON.stringify({
       type: 'join',
       role: 'viewer',
       room: 'gamma',
       access: viewerAccessToken,
+      viewerName: 'Ada',
+      viewerEmail: 'ada@example.com',
     }));
     await waitFor(() => invitedViewer.messages.some((msg) => msg.type === 'presence' && msg.room === 'gamma'));
     await waitFor(() => host.messages.some((msg) => msg.type === 'presence' && msg.room === 'gamma' && msg.viewers === 1));
+    assertPublicPayloadHasNoPrivateFields(host.messages);
+    assertPublicPayloadHasNoPrivateFields(invitedViewer.messages);
+
+    storeState = await waitForSessionStore(server, (state) => (
+      state.participants?.some((participant) => (
+        participant.room === 'gamma' &&
+        participant.role === 'viewer' &&
+        participant.displayName === 'Ada' &&
+        participant.email === 'ada@example.com' &&
+        participant.userId === null &&
+        participant.disconnectedAt === null
+      ))
+    ));
+    durableSession = storeState.sessions.find((session) => session.room === 'gamma');
+    const viewerParticipant = storeState.participants.find((participant) => (
+      participant.sessionId === durableSession.sessionId &&
+      participant.room === 'gamma' &&
+      participant.role === 'viewer'
+    ));
+    assert.equal(viewerParticipant.displayName, 'Ada');
+    assert.equal(viewerParticipant.email, 'ada@example.com');
+    viewerInvite = storeState.invites.find((invite) => (
+      invite.room === 'gamma' &&
+      invite.type === 'viewer_invite' &&
+      !invite.revokedAt
+    ));
+    assert.equal(String(viewerInvite.lastUsedAt) >= String(firstViewerInviteUse), true);
+
+    response = await fetch(`http://127.0.0.1:${server.port}/api/sessions/gamma?access=${encodeURIComponent(viewerAccessToken || '')}`);
+    assert.equal(response.status, 200);
+    payload = await response.json();
+    assertPublicPayloadHasNoPrivateFields(payload);
+
+    response = await fetch(`http://127.0.0.1:${server.port}/api/sessions`);
+    assert.equal(response.status, 200);
+    payload = await response.json();
+    assert.equal(payload.sessions.some((session) => session.room === 'gamma'), false);
+    assertPublicPayloadHasNoPrivateFields(payload);
+
+    const persisted = await fs.readFile(server.sessionStoreFile, 'utf8');
+    assert.equal(persisted.includes(viewerAccessToken || ''), false);
+    assert.equal(persisted.includes(hostAccessToken), false);
 
     await closeClient(invitedViewer.ws);
     await closeClient(host.ws);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('host reconnect reuses durable private session and marks empty rooms ended', async () => {
+  const server = await startServer();
+
+  try {
+    const hostMeta = {
+      mode: 'remote',
+      visibility: 'private',
+      sessionTitle: 'Reconnect Room',
+      hostName: 'Rafa',
+    };
+    const hostAccessToken = 'host-secret-reconnect';
+    const host = await openClient({
+      wsPort: server.wsPort,
+      role: 'host',
+      room: 'reconnect',
+      sessionMeta: hostMeta,
+      hostAccessToken,
+    });
+
+    host.ws.send(JSON.stringify({
+      type: 'join',
+      role: 'host',
+      room: 'reconnect',
+      hostAccess: hostAccessToken,
+      ...hostMeta,
+    }));
+    await waitFor(() => host.messages.some((msg) => msg.type === 'presence' && msg.room === 'reconnect'));
+
+    const inviteResponse = await fetch(
+      `http://127.0.0.1:${server.port}/api/sessions/reconnect/invite?hostAccess=${encodeURIComponent(hostAccessToken)}`,
+    );
+    assert.equal(inviteResponse.status, 200);
+    const invitePayload = await inviteResponse.json();
+    assertPublicPayloadHasNoPrivateFields(invitePayload);
+
+    let storeState = await waitForSessionStore(server, (state) => (
+      state.sessions?.some((session) => session.room === 'reconnect') &&
+      state.invites?.some((invite) => invite.room === 'reconnect' && invite.type === 'viewer_invite') &&
+      state.invites?.some((invite) => invite.room === 'reconnect' && invite.type === 'host_access')
+    ));
+    const sessionBefore = storeState.sessions.find((session) => session.room === 'reconnect');
+    const viewerInviteHashBefore = storeState.invites.find((invite) => (
+      invite.room === 'reconnect' &&
+      invite.type === 'viewer_invite' &&
+      !invite.revokedAt
+    )).tokenHash;
+    const hostAccessHashBefore = storeState.invites.find((invite) => (
+      invite.room === 'reconnect' &&
+      invite.type === 'host_access' &&
+      !invite.revokedAt
+    )).tokenHash;
+
+    await closeClient(host.ws);
+    storeState = await waitForSessionStore(server, (state) => (
+      state.sessions?.some((session) => session.room === 'reconnect' && session.status === 'ended' && session.endedAt) &&
+      state.participants?.some((participant) => participant.room === 'reconnect' && participant.disconnectedAt)
+    ));
+    const endedSession = storeState.sessions.find((session) => session.room === 'reconnect');
+    assert.equal(endedSession.sessionId, sessionBefore.sessionId);
+    assert.equal(endedSession.status, 'ended');
+    assert.equal(Boolean(endedSession.endedAt), true);
+
+    const reconnectedHost = await openClient({
+      wsPort: server.wsPort,
+      role: 'host',
+      room: 'reconnect',
+      sessionMeta: hostMeta,
+      hostAccessToken,
+    });
+    reconnectedHost.ws.send(JSON.stringify({
+      type: 'join',
+      role: 'host',
+      room: 'reconnect',
+      hostAccess: hostAccessToken,
+      ...hostMeta,
+    }));
+    await waitFor(() => reconnectedHost.messages.some((msg) => (
+      msg.type === 'presence' &&
+      msg.room === 'reconnect' &&
+      msg.hosts === 1
+    )));
+
+    storeState = await waitForSessionStore(server, (state) => (
+      state.sessions?.some((session) => session.room === 'reconnect' && session.status === 'waiting' && session.hostCount === 1)
+    ));
+    const sessionsForRoom = storeState.sessions.filter((session) => session.room === 'reconnect');
+    assert.equal(sessionsForRoom.length, 1);
+    const sessionAfter = sessionsForRoom[0];
+    assert.equal(sessionAfter.sessionId, sessionBefore.sessionId);
+    assert.equal(sessionAfter.adHoc, false);
+    assert.equal(sessionAfter.metadataSource, 'host');
+    assert.equal(sessionAfter.title, 'Reconnect Room');
+    assert.equal(sessionAfter.hostName, 'Rafa');
+    assert.equal(sessionAfter.visibility, 'private');
+    assert.equal(sessionAfter.ownerUserId, null);
+
+    const activeViewerInvites = storeState.invites.filter((invite) => (
+      invite.room === 'reconnect' &&
+      invite.type === 'viewer_invite' &&
+      !invite.revokedAt
+    ));
+    const activeHostAccessInvites = storeState.invites.filter((invite) => (
+      invite.room === 'reconnect' &&
+      invite.type === 'host_access' &&
+      !invite.revokedAt
+    ));
+    assert.equal(activeViewerInvites.length, 1);
+    assert.equal(activeHostAccessInvites.length, 1);
+    assert.equal(activeViewerInvites[0].tokenHash, viewerInviteHashBefore);
+    assert.equal(activeHostAccessInvites[0].tokenHash, hostAccessHashBefore);
+
+    await closeClient(reconnectedHost.ws);
+    storeState = await waitForSessionStore(server, (state) => (
+      state.sessions?.some((session) => session.room === 'reconnect' && session.status === 'ended' && session.endedAt)
+    ));
+    assert.equal(storeState.sessions.find((session) => session.room === 'reconnect').status, 'ended');
   } finally {
     await server.stop();
   }

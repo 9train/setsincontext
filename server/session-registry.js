@@ -1,5 +1,8 @@
 import crypto from 'crypto';
 
+import { createSessionStore } from './session-store.js';
+import { normalizeParticipantMetadata } from './session-participants.js';
+
 const DEFAULT_MODE = 'remote';
 const DEFAULT_VISIBILITY = 'private';
 const DEFAULT_TOKEN_BYTES = 18;
@@ -78,6 +81,24 @@ function createSession(room, timestamp) {
   };
 }
 
+function createSessionFromDurableRecord(record) {
+  if (!record?.room) return null;
+  return {
+    room: record.room,
+    mode: record.mode || DEFAULT_MODE,
+    visibility: record.visibility || DEFAULT_VISIBILITY,
+    title: record.title || record.room,
+    hostName: record.hostName || null,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    status: record.status || 'waiting',
+    viewerCount: Number.isFinite(record.viewerCount) ? record.viewerCount : 0,
+    hostCount: Number.isFinite(record.hostCount) ? record.hostCount : 0,
+    adHoc: typeof record.adHoc === 'boolean' ? record.adHoc : true,
+    metadataSource: record.metadataSource || 'fallback',
+  };
+}
+
 function applyRoomState(session, { hosts = 0, viewers = 0, timestamp }) {
   session.hostCount = hosts;
   session.viewerCount = viewers;
@@ -88,9 +109,103 @@ function applyRoomState(session, { hosts = 0, viewers = 0, timestamp }) {
 export function createSessionRegistry({
   now = () => new Date().toISOString(),
   createToken = createOpaqueToken,
+  sessionStore = createSessionStore({ filePath: null, now }),
+  logger = console,
 } = {}) {
   const sessions = new Map();
   const sessionSecrets = new Map();
+
+  function warnDurableStoreFailure(action, error) {
+    logger?.warn?.(`[SESSION_REGISTRY] durable ${action} failed:`, error?.message || error);
+  }
+
+  function safeStoreCall(action, callback, fallback = null) {
+    if (!sessionStore || typeof callback !== 'function') return fallback;
+    try {
+      return callback();
+    } catch (error) {
+      warnDurableStoreFailure(action, error);
+      return fallback;
+    }
+  }
+
+  function getDurableSessionRecord(room) {
+    if (!sessionStore?.getSessionByRoom) return null;
+    return safeStoreCall('session read', () => sessionStore.getSessionByRoom(room));
+  }
+
+  function persistSession(session) {
+    if (!sessionStore?.upsertSession || !session) return null;
+    return safeStoreCall('session write', () => sessionStore.upsertSession(session));
+  }
+
+  function persistInvite(session, { type, rawToken, timestamp } = {}) {
+    if (!sessionStore?.upsertInvite || !session || !rawToken) return null;
+    const durableSession = getDurableSessionRecord(session.room) || persistSession(session);
+    if (!durableSession?.sessionId) return null;
+
+    return safeStoreCall('invite write', () => sessionStore.upsertInvite({
+      sessionId: durableSession.sessionId,
+      room: session.room,
+      type,
+      rawToken,
+      createdAt: timestamp,
+    }));
+  }
+
+  function persistSessionAndSecrets(session, {
+    hostAccessToken,
+    viewerAccessToken,
+    timestamp,
+  } = {}) {
+    persistSession(session);
+    persistInvite(session, {
+      type: 'host_access',
+      rawToken: hostAccessToken,
+      timestamp,
+    });
+    persistInvite(session, {
+      type: 'viewer_invite',
+      rawToken: viewerAccessToken,
+      timestamp,
+    });
+  }
+
+  function useDurableInviteToken(session, { type, rawToken } = {}) {
+    if (!sessionStore?.useInviteToken || !session || !rawToken) return null;
+    const durableSession = getDurableSessionRecord(session.room);
+    if (!durableSession?.sessionId) return null;
+    return safeStoreCall('invite token read', () => sessionStore.useInviteToken({
+      sessionId: durableSession.sessionId,
+      room: session.room,
+      type,
+      rawToken,
+      at: now(),
+    }));
+  }
+
+  function hasDurableInvite(session, type) {
+    if (!sessionStore?.hasUsableInvite || !session) return false;
+    const durableSession = getDurableSessionRecord(session.room);
+    if (!durableSession?.sessionId) return false;
+    return !!safeStoreCall('invite presence read', () => sessionStore.hasUsableInvite({
+      sessionId: durableSession.sessionId,
+      room: session.room,
+      type,
+      at: now(),
+    }), false);
+  }
+
+  function hydrateSessionsFromStore() {
+    if (!sessionStore?.listSessions) return;
+    const storedSessions = safeStoreCall('session list read', () => sessionStore.listSessions(), []);
+    for (const record of storedSessions) {
+      const session = createSessionFromDurableRecord(record);
+      if (session) sessions.set(session.room, session);
+    }
+  }
+
+  hydrateSessionsFromStore();
 
   function ensureSession(room, timestamp) {
     if (!sessions.has(room)) {
@@ -141,15 +256,66 @@ export function createSessionRegistry({
       return { ok: false, code: 'invite_required', session: cloneSession(session) };
     }
 
-    if (!secrets.viewerAccessToken || normalizedAccessToken !== secrets.viewerAccessToken) {
+    if (secrets.viewerAccessToken) {
+      if (normalizedAccessToken === secrets.viewerAccessToken) {
+        useDurableInviteToken(session, {
+          type: 'viewer_invite',
+          rawToken: normalizedAccessToken,
+        });
+        return {
+          ok: true,
+          session: cloneSession(session),
+          accessToken: normalizedAccessToken,
+        };
+      }
       return { ok: false, code: 'invalid_access', session: cloneSession(session) };
     }
 
+    const durableInvite = useDurableInviteToken(session, {
+      type: 'viewer_invite',
+      rawToken: normalizedAccessToken,
+    });
+    if (!durableInvite) {
+      return { ok: false, code: 'invalid_access', session: cloneSession(session) };
+    }
+
+    secrets.viewerAccessToken = normalizedAccessToken;
     return {
       ok: true,
       session: cloneSession(session),
       accessToken: normalizedAccessToken,
     };
+  }
+
+  function authorizeHostAccessToSession(session, hostAccessToken, { requireKnownSecret = false } = {}) {
+    const secrets = ensureSessionSecrets(session.room);
+    const normalizedHostAccessToken = normalizeAccessToken(hostAccessToken);
+
+    if (secrets.hostAccessToken) {
+      if (!!normalizedHostAccessToken && normalizedHostAccessToken === secrets.hostAccessToken) {
+        useDurableInviteToken(session, {
+          type: 'host_access',
+          rawToken: normalizedHostAccessToken,
+        });
+        return true;
+      }
+      return false;
+    }
+
+    const hasStoredHostAccess = hasDurableInvite(session, 'host_access');
+    if (normalizedHostAccessToken) {
+      const durableInvite = useDurableInviteToken(session, {
+        type: 'host_access',
+        rawToken: normalizedHostAccessToken,
+      });
+      if (durableInvite) {
+        secrets.hostAccessToken = normalizedHostAccessToken;
+        return true;
+      }
+    }
+
+    if (requireKnownSecret || hasStoredHostAccess) return false;
+    return true;
   }
 
   function recordJoin({
@@ -202,11 +368,16 @@ export function createSessionRegistry({
       }
     }
 
-    if (isProtectedPrivateSession(session)) {
-      ensurePrivateViewerAccessToken(room);
-    }
+    const viewerAccessToken = isProtectedPrivateSession(session)
+      ? ensurePrivateViewerAccessToken(room)
+      : null;
 
     applyRoomState(session, { hosts, viewers, timestamp });
+    persistSessionAndSecrets(session, {
+      hostAccessToken: isProtectedPrivateSession(session) ? normalizedHostAccessToken : null,
+      viewerAccessToken,
+      timestamp,
+    });
     return cloneSession(session);
   }
 
@@ -214,7 +385,49 @@ export function createSessionRegistry({
     if (!room || !sessions.has(room)) return null;
     const session = sessions.get(room);
     applyRoomState(session, { hosts, viewers, timestamp: now() });
+    persistSession(session);
     return cloneSession(session);
+  }
+
+  function recordParticipantJoin({
+    room,
+    role = 'viewer',
+    participantId,
+    anonymousId,
+    metadata = {},
+  } = {}) {
+    if (!sessionStore?.upsertParticipant || !room || !participantId) return null;
+
+    const session = sessions.get(room);
+    const durableSession = getDurableSessionRecord(room) || (session ? persistSession(session) : null);
+    if (!durableSession?.sessionId) return null;
+
+    const timestamp = now();
+    const participantMetadata = normalizeParticipantMetadata(metadata, { role });
+    const participantInput = {
+      participantId,
+      sessionId: durableSession.sessionId,
+      room: durableSession.room || room,
+      role,
+      anonymousId,
+      lastSeenAt: timestamp,
+      disconnectedAt: null,
+    };
+
+    if (participantMetadata.displayName) participantInput.displayName = participantMetadata.displayName;
+    if (participantMetadata.email) participantInput.email = participantMetadata.email;
+
+    return safeStoreCall('participant write', () => sessionStore.upsertParticipant(participantInput));
+  }
+
+  function markParticipantDisconnected({ participantId } = {}) {
+    if (!sessionStore?.markParticipantDisconnected || !participantId) return null;
+    const timestamp = now();
+    return safeStoreCall('participant disconnect write', () => sessionStore.markParticipantDisconnected({
+      participantId,
+      lastSeenAt: timestamp,
+      disconnectedAt: timestamp,
+    }));
   }
 
   function getSession(room) {
@@ -261,13 +474,7 @@ export function createSessionRegistry({
     }
 
     if (role === 'host') {
-      const secrets = ensureSessionSecrets(room);
-      if (!secrets.hostAccessToken) {
-        return { ok: true, session: cloneSession(session) };
-      }
-
-      const normalizedHostAccessToken = normalizeAccessToken(hostAccessToken);
-      if (normalizedHostAccessToken && normalizedHostAccessToken === secrets.hostAccessToken) {
+      if (authorizeHostAccessToSession(session, hostAccessToken)) {
         return { ok: true, session: cloneSession(session) };
       }
 
@@ -287,20 +494,20 @@ export function createSessionRegistry({
       return { ok: false, code: 'not_private', session: cloneSession(session) };
     }
 
-    const secrets = ensureSessionSecrets(room);
-    const normalizedHostAccessToken = normalizeAccessToken(hostAccessToken);
-    if (
-      !secrets.hostAccessToken ||
-      !normalizedHostAccessToken ||
-      normalizedHostAccessToken !== secrets.hostAccessToken
-    ) {
+    if (!authorizeHostAccessToSession(session, hostAccessToken, { requireKnownSecret: true })) {
       return { ok: false, code: 'host_access_required', session: cloneSession(session) };
     }
+
+    const accessToken = ensurePrivateViewerAccessToken(room);
+    persistSessionAndSecrets(session, {
+      viewerAccessToken: accessToken,
+      timestamp: now(),
+    });
 
     return {
       ok: true,
       session: cloneSession(session),
-      accessToken: ensurePrivateViewerAccessToken(room),
+      accessToken,
     };
   }
 
@@ -316,7 +523,9 @@ export function createSessionRegistry({
     getSession,
     getPrivateInvite,
     listSessions,
+    markParticipantDisconnected,
     recordJoin,
+    recordParticipantJoin,
     resolveSessionAccess,
     resolveSessionKey,
     syncRoomState,

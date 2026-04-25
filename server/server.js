@@ -23,6 +23,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import { create as createHID } from './hid.js';
 import { createSessionRegistry } from './session-registry.js';
+import { createSessionStore } from './session-store.js';
 
 // ---- __filename / __dirname equivalents in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -85,8 +86,12 @@ const ALLOWED_ORIGINS = new Set([
 // ---- Static web server
 const app = express();
 const ROOT_DIR = path.join(__dirname, '..');
-const sessionRegistry = createSessionRegistry();
+const sessionStore = createSessionStore({
+  filePath: process.env.SESSION_STORE_FILE || null,
+});
+const sessionRegistry = createSessionRegistry({ sessionStore });
 const SESSION_META_KEYS = ['mode', 'visibility', 'sessionTitle', 'hostName'];
+const PARTICIPANT_META_KEYS = ['viewerName', 'viewerEmail'];
 const PUBLIC_SESSION_VISIBILITY = 'public';
 
 function sendRootFile(name) {
@@ -108,6 +113,20 @@ function pickSessionMetadata(source) {
 
 function mergeSessionMetadata(...sources) {
   return Object.assign({}, ...sources.map(pickSessionMetadata));
+}
+
+function pickParticipantMetadata(source) {
+  if (!source || typeof source !== 'object') return {};
+  const metadata = {};
+  for (const key of PARTICIPANT_META_KEYS) {
+    if (source[key] == null || source[key] === '') continue;
+    metadata[key] = source[key];
+  }
+  return metadata;
+}
+
+function mergeParticipantMetadata(...sources) {
+  return Object.assign({}, ...sources.map(pickParticipantMetadata));
 }
 
 function normalizeAccessToken(value) {
@@ -492,6 +511,44 @@ function syncSessionForRoom(roomName) {
   });
 }
 
+function getSocketParticipantId(ws, roomName, role) {
+  if (!ws) return null;
+  if (!ws.participantIds) ws.participantIds = new Map();
+
+  const participantKey = `${roomName || 'default'}\n${role || 'viewer'}`;
+  if (!ws.participantIds.has(participantKey)) {
+    ws.participantSeq = (ws.participantSeq || 0) + 1;
+    ws.participantIds.set(participantKey, `participant_${ws.id}_${ws.participantSeq}`);
+  }
+  return ws.participantIds.get(participantKey);
+}
+
+function recordSocketParticipantJoin(ws, { room, role, metadata } = {}) {
+  const participantId = getSocketParticipantId(ws, room, role);
+  if (!participantId) return null;
+
+  const participant = sessionRegistry.recordParticipantJoin({
+    room,
+    role,
+    participantId,
+    anonymousId: ws.id,
+    metadata,
+  });
+  if (participant?.participantId) {
+    ws.participantId = participant.participantId;
+  }
+  return participant;
+}
+
+function markSocketParticipantDisconnected(ws) {
+  if (!ws?.participantId) return null;
+  const participant = sessionRegistry.markParticipantDisconnected({
+    participantId: ws.participantId,
+  });
+  ws.participantId = null;
+  return participant;
+}
+
 // Presence broadcast
 function broadcastPresence(roomName) {
   const r = getRoom(roomName);
@@ -525,6 +582,7 @@ function joinSocket(ws, { role, room, metadata } = {}) {
   const nextRole = String(role || ws.role || 'viewer').toLowerCase();
   const nextRoom = room || ws.room || 'default';
   const nextMetadata = mergeSessionMetadata(ws.sessionMeta, metadata);
+  const nextParticipantMetadata = mergeParticipantMetadata(ws.participantMeta, metadata);
   const nextAccessToken = normalizeAccessToken(metadata?.access ?? ws.accessToken);
   const nextHostAccessToken = normalizeAccessToken(metadata?.hostAccess ?? ws.hostAccessToken);
   const prevRoom = ws.joined ? ws.room : null;
@@ -548,12 +606,14 @@ function joinSocket(ws, { role, room, metadata } = {}) {
     const prev = getRoom(prevRoom);
     prev.hosts.delete(ws);
     prev.viewers.delete(ws);
+    markSocketParticipantDisconnected(ws);
     syncSessionForRoom(prevRoom);
   }
 
   ws.role = nextRole;
   ws.room = nextRoom;
   ws.sessionMeta = nextMetadata;
+  ws.participantMeta = nextParticipantMetadata;
   ws.accessToken = nextAccessToken;
   ws.hostAccessToken = nextHostAccessToken;
 
@@ -579,6 +639,11 @@ function joinSocket(ws, { role, room, metadata } = {}) {
     viewers: r.viewers.size,
     metadata: nextMetadata,
     hostAccessToken: nextHostAccessToken,
+  });
+  recordSocketParticipantJoin(ws, {
+    room: nextRoom,
+    role: nextRole,
+    metadata: nextParticipantMetadata,
   });
 
   logSocket('log', 'socket-join', ws, {
@@ -749,19 +814,24 @@ wss.on('connection', (ws, req) => {
     const parsed = new URL(req.url, 'http://localhost');
     ws.role = (parsed.searchParams.get('role') || 'viewer').toLowerCase();
     ws.room = parsed.searchParams.get('room') || 'default';
-    ws.sessionMeta = pickSessionMetadata(Object.fromEntries(parsed.searchParams.entries()));
+    const queryMetadata = Object.fromEntries(parsed.searchParams.entries());
+    ws.sessionMeta = pickSessionMetadata(queryMetadata);
+    ws.participantMeta = pickParticipantMetadata(queryMetadata);
     ws.accessToken = normalizeAccessToken(parsed.searchParams.get('access'));
     ws.hostAccessToken = normalizeAccessToken(parsed.searchParams.get('hostAccess'));
   } catch {
     ws.role = 'viewer';
     ws.room = 'default';
     ws.sessionMeta = {};
+    ws.participantMeta = {};
     ws.accessToken = null;
     ws.hostAccessToken = null;
   }
 
   // NEW: per-connection id (used for probe ack dedupe)
   ws.id = `c_${Math.random().toString(36).slice(2, 10)}`;
+  ws.participantIds = new Map();
+  ws.participantSeq = 0;
   ws.joined = false;
   logSocket('log', 'socket-open', ws, {
     url: req?.url || null,
@@ -796,6 +866,7 @@ wss.on('connection', (ws, req) => {
         if (msg.role) ws.role = String(msg.role).toLowerCase();
         if (msg.room) ws.room = msg.room;
         ws.sessionMeta = mergeSessionMetadata(ws.sessionMeta, msg);
+        ws.participantMeta = mergeParticipantMetadata(ws.participantMeta, msg);
         if ('access' in msg) ws.accessToken = normalizeAccessToken(msg.access);
         if ('hostAccess' in msg) ws.hostAccessToken = normalizeAccessToken(msg.hostAccess);
         return;
@@ -942,6 +1013,7 @@ wss.on('connection', (ws, req) => {
     r.hosts.delete(ws);
     r.viewers.delete(ws);
     ws.joined = false;
+    markSocketParticipantDisconnected(ws);
     syncSessionForRoom(roomName);
     // Broadcast updated presence when someone leaves
     broadcastPresence(roomName);
