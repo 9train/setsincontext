@@ -3,3 +3,8 @@
 .DS_Store
 **/.DS_Store
 node_modules/
+
+# Runtime-local persistence
+data/*.json
+.runtime-data/
+.session-store/

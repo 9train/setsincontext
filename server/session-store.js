@@ -135,7 +135,10 @@ function loadState(filePath, { logger = console, now, createId } = {}) {
     const parsed = raw.trim() ? JSON.parse(raw) : {};
     return normalizeState(parsed, { now, createId });
   } catch (error) {
-    logger?.warn?.('[SESSION_STORE] failed to load session store; starting empty:', error?.message || error);
+    logger?.warn?.('[SESSION_STORE] failed to load session store; starting empty', {
+      filePath,
+      error: error?.message || String(error),
+    });
     return emptyState();
   }
 }
@@ -160,13 +163,20 @@ export function createSessionStore({
   function persist() {
     if (!storeFile) return;
 
+    let tempFile = null;
     try {
       fs.mkdirSync(path.dirname(storeFile), { recursive: true });
-      const tempFile = `${storeFile}.${process.pid}.${Date.now()}.tmp`;
+      tempFile = `${storeFile}.${process.pid}.${Date.now()}.${crypto.randomUUID()}.tmp`;
       fs.writeFileSync(tempFile, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
       fs.renameSync(tempFile, storeFile);
     } catch (error) {
-      logger?.warn?.('[SESSION_STORE] failed to persist session store:', error?.message || error);
+      if (tempFile) {
+        try { fs.rmSync(tempFile, { force: true }); } catch {}
+      }
+      logger?.warn?.('[SESSION_STORE] failed to persist session store', {
+        filePath: storeFile,
+        error: error?.message || String(error),
+      });
     }
   }
 
