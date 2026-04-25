@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as waitForTurn } from 'node:timers/promises';
 
+import { resolveInfoRenderPlan } from '../src/board.js';
 import { installMockBrowser } from './browser-test-helpers.js';
 
 let importCounter = 0;
@@ -111,6 +112,70 @@ test('host bootstrap uses map:ensure fallback when the local learned map is empt
     ]);
     assert.equal(typeof ensureFrame.key, 'string');
     assert.equal(ensureFrame.key.length > 0, true);
+  } finally {
+    env.restore();
+  }
+});
+
+test('host bootstrap does not send empty learned maps or erase official rendering', async () => {
+  const fetchCalls = [];
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '?ws=ws://host.test&room=empty',
+    WebSocketImpl: FakeWebSocket,
+    fetchImpl: async (url) => {
+      fetchCalls.push(url);
+      return { ok: true, json: async () => [] };
+    },
+  });
+
+  env.localStorage.setItem('flx.learned.map.v1', JSON.stringify([]));
+  env.localStorage.setItem('learned_map', JSON.stringify([]));
+
+  try {
+    await importFresh('../src/bootstrap-host.js');
+    assert.equal(sockets.length, 1);
+
+    const ws = sockets[0];
+    ws.open();
+    await env.advanceTimersBy(2200);
+    await waitForTurn();
+
+    const frames = ws.sent.map((message) => JSON.parse(message));
+    assert.deepEqual(frames.slice(0, 3), [
+      { type: 'hello', role: 'host' },
+      { type: 'join', role: 'host', room: 'empty' },
+      { type: 'map:get' },
+    ]);
+    assert.deepEqual(fetchCalls, ['/learned_map.json']);
+    assert.equal(frames.some((frame) => frame.type === 'map:ensure'), false);
+    assert.equal(frames.some((frame) => frame.type === 'map:set'), false);
+
+    assert.equal(env.window.wsClient.sendMap([]), false);
+    assert.equal(env.window.wsClient.sendMap({}), false);
+    assert.equal(ws.sent.map((message) => JSON.parse(message)).some((frame) => frame.type === 'map:set'), false);
+
+    const renderPlan = resolveInfoRenderPlan({
+      eventType: 'normalized_input',
+      profileId: 'pioneer-ddj-flx6',
+      canonicalTarget: 'deck.left.transport.play',
+      mappingId: 'deck.left.transport.play.main.press',
+      mapped: true,
+      truthStatus: 'official',
+      type: 'noteon',
+      ch: 1,
+      d1: 11,
+      d2: 127,
+      value: 127,
+      render: {
+        targetId: 'play_L',
+        truthStatus: 'official',
+        source: 'profile-ui',
+      },
+    }, []);
+    assert.equal(renderPlan.targetId, 'play_L');
+    assert.equal(renderPlan.authority, 'official-render');
+    assert.equal(renderPlan.ownership, 'official');
   } finally {
     env.restore();
   }

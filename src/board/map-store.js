@@ -27,28 +27,38 @@ export function normalizeRenderOwnership(value, fallback = UNKNOWN_RENDER_OWNERS
     : fallback;
 }
 
+export function normalizeCompatibilityOwnership(value, fallback = FALLBACK_RENDER_OWNERSHIP) {
+  const text = String(value || '').trim().toLowerCase();
+  if (text === DRAFT_RENDER_OWNERSHIP || text === FALLBACK_RENDER_OWNERSHIP) return text;
+
+  const normalizedFallback = normalizeRenderOwnership(fallback, FALLBACK_RENDER_OWNERSHIP);
+  return normalizedFallback === OFFICIAL_RENDER_OWNERSHIP
+    ? DRAFT_RENDER_OWNERSHIP
+    : normalizedFallback;
+}
+
 export function inferMapOwnership(entries, fallback = FALLBACK_RENDER_OWNERSHIP) {
-  if (!Array.isArray(entries)) return normalizeRenderOwnership(null, fallback);
+  if (!Array.isArray(entries)) return normalizeCompatibilityOwnership(null, fallback);
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
     if (entry && entry.ownership) {
-      return normalizeRenderOwnership(entry.ownership, fallback);
+      return normalizeCompatibilityOwnership(entry.ownership, fallback);
     }
   }
-  return normalizeRenderOwnership(null, fallback);
+  return normalizeCompatibilityOwnership(null, fallback);
 }
 
 export function normalizeMapEntries(entries, fallbackOwnership = FALLBACK_RENDER_OWNERSHIP) {
   if (!Array.isArray(entries) || entries.length === 0) return [];
   return entries.map((entry) => ({
     ...(entry || {}),
-    ownership: normalizeRenderOwnership(entry && entry.ownership, fallbackOwnership),
+    ownership: normalizeCompatibilityOwnership(entry && entry.ownership, fallbackOwnership),
   }));
 }
 
 export function mergeMaps(fileMap, local, options = {}) {
-  const baseOwnership = normalizeRenderOwnership(options.baseOwnership, FALLBACK_RENDER_OWNERSHIP);
-  const overlayOwnership = normalizeRenderOwnership(options.overlayOwnership, DRAFT_RENDER_OWNERSHIP);
+  const baseOwnership = normalizeCompatibilityOwnership(options.baseOwnership, FALLBACK_RENDER_OWNERSHIP);
+  const overlayOwnership = normalizeCompatibilityOwnership(options.overlayOwnership, DRAFT_RENDER_OWNERSHIP);
   const byKey = new Map();
 
   normalizeMapEntries(fileMap || [], baseOwnership).forEach((entry) => {

@@ -486,12 +486,35 @@ test('host sendMap ignores empty learned maps but still syncs non-empty maps', a
 
     assert.equal(client.sendMap(null), false);
     assert.equal(client.sendMap([]), false);
+    assert.equal(client.sendMap({}), false);
 
     ws.open();
     await env.advanceTimersBy(1300);
 
     assert.equal(client.sendMap([]), false);
+    assert.equal(client.sendMap({}), false);
     assert.equal(client.sendMap([{}, null]), false);
+
+    assert.equal(client.send({
+      eventType: 'normalized_input',
+      profileId: 'pioneer-ddj-flx6',
+      canonicalTarget: 'deck.left.transport.play',
+      mappingId: 'deck.left.transport.play.main.press',
+      mapped: true,
+      truthStatus: 'official',
+      render: {
+        targetId: 'play_L',
+        truthStatus: 'official',
+        source: 'profile-ui',
+      },
+      interaction: 'noteon',
+      type: 'noteon',
+      ch: 1,
+      d1: 11,
+      d2: 127,
+      value: 127,
+      timestamp: 456,
+    }), true);
 
     const learnedMap = [{ key: 'cc:1:31', target: 'xfader', type: 'cc', ch: 1, code: 31 }];
     assert.equal(client.sendMap(learnedMap), true);
@@ -506,6 +529,10 @@ test('host sendMap ignores empty learned maps but still syncs non-empty maps', a
       frames.filter((frame) => frame.type === 'map:set'),
       [{ type: 'map:set', map: learnedMap }],
     );
+    const relayFrame = frames.find((frame) => frame.type === 'controller_event');
+    assert.equal(relayFrame.event.render.targetId, 'play_L');
+    assert.equal(relayFrame.event.render.truthStatus, 'official');
+    assert.equal(relayFrame.event.truthStatus, 'official');
   } finally {
     env.restore();
   }

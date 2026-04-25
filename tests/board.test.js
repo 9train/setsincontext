@@ -6,15 +6,18 @@ import assert from 'node:assert/strict';
 import {
   decodeRelative7,
   getContinuousRenderValue,
+  getUnifiedMap,
   getLinearControlPosition,
   getLinearControlRatio,
   inspectBoardTarget,
+  remergeLearned,
   resolveCanonicalRenderTargetId,
   resolveInfoRenderPlan,
   resolveInfoRenderTarget,
   resolveRenderTargetId,
   shouldHoldBinaryVisualState,
 } from '../src/board.js';
+import { setFileMapCache, setUnifiedMap } from '../src/board/state.js';
 import { installMockBrowser } from './browser-test-helpers.js';
 
 test('inputs 0 and 64 return 0', () => {
@@ -630,6 +633,62 @@ test('draft learned-map compatibility stays visibly draft when explicitly enable
     compatibility: true,
     blocked: false,
   });
+});
+
+test('localStorage learned maps stay draft diagnostic-only even if they claim official ownership', () => {
+  const env = installMockBrowser();
+
+  try {
+    setFileMapCache([]);
+    setUnifiedMap([]);
+    env.localStorage.setItem('flx.learned.map.v1', JSON.stringify([{
+      key: 'noteon:1:77',
+      target: 'play_L',
+      ownership: 'official',
+      canonicalTarget: 'deck.left.transport.play',
+      type: 'noteon',
+      ch: 1,
+      code: 77,
+      name: 'Claimed Official Play',
+    }]));
+
+    remergeLearned();
+    const learnedMap = getUnifiedMap();
+    assert.equal(learnedMap.length, 1);
+    assert.equal(learnedMap[0].ownership, 'draft');
+
+    const rawInfo = { type: 'noteon', ch: 1, d1: 77, d2: 127, value: 127 };
+    assert.deepEqual(resolveInfoRenderPlan(rawInfo, learnedMap), {
+      targetId: null,
+      authority: 'unmapped',
+      source: 'unmapped',
+      fallbackReason: null,
+      canonicalTarget: null,
+      mappingId: null,
+      context: null,
+      profileId: null,
+      ownership: 'unknown',
+      fallback: false,
+      compatibility: false,
+      blocked: false,
+    });
+
+    const compatibilityPlan = resolveInfoRenderPlan(rawInfo, learnedMap, { allowLegacyMapFallback: true });
+    assert.equal(compatibilityPlan.targetId, 'play_L');
+    assert.equal(compatibilityPlan.authority, 'compatibility-raw');
+    assert.equal(compatibilityPlan.ownership, 'draft');
+
+    const inspection = inspectBoardTarget('play_L', learnedMap);
+    assert.equal(inspection.officialSource.status, 'official');
+    assert.equal(inspection.compatibilityMappings.length, 1);
+    assert.equal(inspection.compatibilityMappings[0].ownership, 'draft');
+    assert.equal(inspection.compatibilityMappings[0].reviewStatus, 'shadowing-official');
+    assert.equal(inspection.mappingReview.authoritativeOwner, 'official');
+  } finally {
+    setFileMapCache([]);
+    setUnifiedMap([]);
+    env.restore();
+  }
 });
 
 test('raw learned-map fallback is suppressed when official controller meaning exists but no board render target does', () => {

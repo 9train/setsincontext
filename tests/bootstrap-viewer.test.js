@@ -1,6 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { consumeInfo } from '../src/board.js';
+import { inspectBoardTarget } from '../src/board.js';
+import { installBoardWindowBindings } from '../src/board/runtime.js';
+import {
+  heldBinaryTargets,
+  jogAngle,
+  knobAccumAngle,
+  lastCCValue,
+  litTimers,
+  pairedAbsoluteState,
+  setBoardSvgRoot,
+  setFileMapCache,
+  setUnifiedMap,
+} from '../src/board/state.js';
 import { installMockBrowser } from './browser-test-helpers.js';
 
 let importCounter = 0;
@@ -68,6 +82,77 @@ function createFakeWebSocketHarness() {
   return { FakeWebSocket, sockets };
 }
 
+function createClassList() {
+  const tokens = new Set();
+  return {
+    add(...values) {
+      values.forEach((value) => tokens.add(String(value)));
+    },
+    remove(...values) {
+      values.forEach((value) => tokens.delete(String(value)));
+    },
+    contains(value) {
+      return tokens.has(String(value));
+    },
+  };
+}
+
+function clearStore(store) {
+  for (const key of Object.keys(store || {})) {
+    delete store[key];
+  }
+}
+
+function resetBoardState() {
+  setBoardSvgRoot(null);
+  setUnifiedMap([]);
+  setFileMapCache([]);
+  clearStore(lastCCValue);
+  clearStore(knobAccumAngle);
+  clearStore(jogAngle);
+  clearStore(litTimers);
+  clearStore(heldBinaryTargets);
+  clearStore(pairedAbsoluteState);
+}
+
+function createBoardFixture(ids = []) {
+  const elements = new Map();
+  const root = {
+    getElementById(id) {
+      return elements.get(String(id || '')) || null;
+    },
+  };
+
+  ids.forEach((id) => {
+    const attrs = new Map([['id', String(id)]]);
+    elements.set(String(id), {
+      id: String(id),
+      ownerSVGElement: root,
+      children: [],
+      classList: createClassList(),
+      style: {
+        removeProperty(name) {
+          delete this[name];
+        },
+      },
+      getAttribute(name) {
+        return attrs.has(name) ? attrs.get(name) : null;
+      },
+      hasAttribute(name) {
+        return attrs.has(name);
+      },
+      setAttribute(name, value) {
+        attrs.set(name, String(value));
+      },
+      getBBox() {
+        return { x: 0, y: 0, width: 100, height: 100 };
+      },
+    });
+  });
+
+  return { root, elements };
+}
+
 test('viewer bootstrap lets a remote map win before fallback can apply', async () => {
   const fallbackMap = [{ key: 'cc:1:10', target: 'jog_L' }];
   const remoteMap = [{ key: 'cc:1:11', target: 'jog_R' }];
@@ -105,6 +190,75 @@ test('viewer bootstrap lets a remote map win before fallback can apply', async (
   }
 });
 
+test('viewer bootstrap renders official controller_event frames without fallback map bootstrap', async () => {
+  const seen = [];
+  const fetchCalls = [];
+  const { root, elements } = createBoardFixture(['play_L']);
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '?ws=ws://viewer.test&room=official',
+    WebSocketImpl: FakeWebSocket,
+    fetchImpl: async (url) => {
+      fetchCalls.push(url);
+      return { ok: true, json: async () => [] };
+    },
+  });
+  resetBoardState();
+  setBoardSvgRoot(root);
+  installBoardWindowBindings();
+  env.window.consumeInfo = (info) => {
+    seen.push(info);
+    consumeInfo(info);
+    return info;
+  };
+
+  try {
+    await importFresh('../src/bootstrap-viewer.js');
+    assert.equal(sockets.length, 1);
+
+    const ws = sockets[0];
+    ws.open();
+    await env.advanceTimersBy(1200);
+
+    ws.emitMessage({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        profileId: 'pioneer-ddj-flx6',
+        canonicalTarget: 'deck.left.transport.play',
+        mappingId: 'deck.left.transport.play.main.press',
+        mapped: true,
+        truthStatus: 'official',
+        valueShape: 'binary',
+        render: {
+          targetId: 'play_L',
+          truthStatus: 'official',
+          source: 'profile-ui',
+        },
+        interaction: 'noteon',
+        type: 'noteon',
+        ch: 1,
+        d1: 11,
+        d2: 127,
+        value: 127,
+        timestamp: 1,
+      },
+    });
+
+    assert.equal(fetchCalls.length, 0);
+    assert.equal(env.localStorage.getItem('learned_map'), null);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]._boardRender.targetId, 'play_L');
+    assert.equal(seen[0]._boardRender.authority, 'official-render');
+    assert.equal(seen[0]._boardRender.ownership, 'official');
+    assert.equal(seen[0]._boardRender.outcome, 'updated');
+    assert.equal(elements.get('play_L').classList.contains('lit'), true);
+  } finally {
+    resetBoardState();
+    env.restore();
+  }
+});
+
 test('viewer bootstrap applies fallback map when no remote map arrives', async () => {
   const fallbackMap = [{ key: 'cc:1:77', target: 'jog_L' }];
   const expectedFallbackMap = [{ key: 'cc:1:77', target: 'jog_L', ownership: 'fallback' }];
@@ -133,6 +287,74 @@ test('viewer bootstrap applies fallback map when no remote map arrives', async (
     assert.equal(env.dispatchedEvents[0].type, 'flx:remote-map');
     assert.deepEqual(env.dispatchedEvents[0].detail, expectedFallbackMap);
   } finally {
+    env.restore();
+  }
+});
+
+test('viewer bootstrap keeps fallback-mapped unknown raw MIDI diagnostic-only', async () => {
+  const seen = [];
+  const fallbackMap = [{
+    key: 'noteon:1:77',
+    target: 'play_L',
+    type: 'noteon',
+    ch: 1,
+    code: 77,
+  }];
+  const { root, elements } = createBoardFixture(['play_L']);
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '?ws=ws://viewer.test&room=fallback-raw',
+    WebSocketImpl: FakeWebSocket,
+    fetchImpl: async () => ({ ok: true, json: async () => fallbackMap }),
+  });
+  resetBoardState();
+  setBoardSvgRoot(root);
+  installBoardWindowBindings();
+  env.window.consumeInfo = (info) => {
+    seen.push(info);
+    consumeInfo(info);
+    return info;
+  };
+
+  try {
+    await importFresh('../src/bootstrap-viewer.js');
+    assert.equal(sockets.length, 1);
+
+    const ws = sockets[0];
+    ws.open();
+    await env.advanceTimersBy(1500);
+
+    assert.deepEqual(env.window.__currentMap, [{
+      key: 'noteon:1:77',
+      target: 'play_L',
+      type: 'noteon',
+      ch: 1,
+      code: 77,
+      ownership: 'fallback',
+    }]);
+
+    ws.emitMessage({
+      type: 'midi_like',
+      payload: {
+        type: 'noteon',
+        ch: 1,
+        d1: 77,
+        d2: 127,
+        value: 127,
+        __flxDebug: true,
+        __flxDebugSource: 'fallback-map-review',
+      },
+    });
+
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].__flxDebug, true);
+    assert.equal(seen[0]._boardRender.targetId, null);
+    assert.equal(seen[0]._boardRender.authority, 'unmapped');
+    assert.equal(seen[0]._boardRender.ownership, 'unknown');
+    assert.equal(seen[0]._boardRender.outcome, 'absent');
+    assert.equal(elements.get('play_L').classList.contains('lit'), false);
+  } finally {
+    resetBoardState();
     env.restore();
   }
 });
@@ -225,6 +447,88 @@ test('viewer bootstrap forwards linear control WS info to the shared consumer', 
       },
     ]);
   } finally {
+    env.restore();
+  }
+});
+
+test('viewer bootstrap retains conflicting remote maps as draft while official relay render wins', async () => {
+  const seen = [];
+  const remoteMap = [{
+    key: 'noteon:1:11',
+    target: 'cue_R',
+    ownership: 'official',
+    canonicalTarget: 'deck.left.transport.play',
+  }];
+  const { root, elements } = createBoardFixture(['play_L', 'cue_R']);
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '?ws=ws://viewer.test&room=remote-conflict',
+    WebSocketImpl: FakeWebSocket,
+  });
+  resetBoardState();
+  setBoardSvgRoot(root);
+  installBoardWindowBindings();
+  env.window.consumeInfo = (info) => {
+    seen.push(info);
+    consumeInfo(info);
+    return info;
+  };
+
+  try {
+    await importFresh('../src/bootstrap-viewer.js');
+    assert.equal(sockets.length, 1);
+
+    const ws = sockets[0];
+    ws.open();
+    await env.advanceTimersBy(1200);
+    ws.emitMessage({ type: 'map:sync', room: 'remote-conflict', map: remoteMap, key: 'remote-conflict-1' });
+
+    assert.deepEqual(env.window.__currentMap, [{
+      key: 'noteon:1:11',
+      target: 'cue_R',
+      ownership: 'draft',
+      canonicalTarget: 'deck.left.transport.play',
+    }]);
+
+    ws.emitMessage({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        profileId: 'pioneer-ddj-flx6',
+        canonicalTarget: 'deck.left.transport.play',
+        mappingId: 'deck.left.transport.play.main.press',
+        mapped: true,
+        truthStatus: 'official',
+        valueShape: 'binary',
+        render: {
+          targetId: 'play_L',
+          truthStatus: 'official',
+          source: 'profile-ui',
+        },
+        interaction: 'noteon',
+        type: 'noteon',
+        ch: 1,
+        d1: 11,
+        d2: 127,
+        value: 127,
+        timestamp: 2,
+      },
+    });
+
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]._boardRender.targetId, 'play_L');
+    assert.equal(seen[0]._boardRender.authority, 'official-render');
+    assert.equal(seen[0]._boardRender.ownership, 'official');
+    assert.equal(elements.get('play_L').classList.contains('lit'), true);
+    assert.equal(elements.get('cue_R').classList.contains('lit'), false);
+
+    const inspection = inspectBoardTarget('cue_R', env.window.__currentMap);
+    assert.equal(inspection.officialSource.status, 'official');
+    assert.equal(inspection.compatibilityMappings.length, 1);
+    assert.equal(inspection.compatibilityMappings[0].ownership, 'draft');
+    assert.equal(inspection.compatibilityMappings[0].reviewState, 'blocked');
+  } finally {
+    resetBoardState();
     env.restore();
   }
 });

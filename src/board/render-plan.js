@@ -5,6 +5,7 @@ import {
   UNKNOWN_RENDER_OWNERSHIP,
   hasOwn,
   infoKey,
+  normalizeCompatibilityOwnership,
   normalizeRenderOwnership,
 } from './map-store.js';
 import {
@@ -182,7 +183,7 @@ function deriveRenderPlanOwnership(authority, entry, explicitOwnership = null) {
   const normalizedAuthority = String(authority || '').trim().toLowerCase();
   if (normalizedAuthority.startsWith('official')) return OFFICIAL_RENDER_OWNERSHIP;
   if (normalizedAuthority === 'compatibility-raw') {
-    return normalizeRenderOwnership(entry && entry.ownership, FALLBACK_RENDER_OWNERSHIP);
+    return normalizeCompatibilityOwnership(entry && entry.ownership, FALLBACK_RENDER_OWNERSHIP);
   }
   if (normalizedAuthority.startsWith('compatibility')) return FALLBACK_RENDER_OWNERSHIP;
   if (normalizedAuthority === 'unmapped') return UNKNOWN_RENDER_OWNERSHIP;

@@ -331,6 +331,55 @@ test('debugger snapshot labels draft compatibility render ownership explicitly',
   assert.equal(snapshot.debugTransaction.mappingAuthority.owner, 'draft');
 });
 
+test('diagnostics surface draft candidates without making unknown raw events authoritative', () => {
+  const mapEntries = [{
+    key: 'noteon:1:77',
+    target: 'play_L',
+    ownership: 'draft',
+    canonicalTarget: 'deck.left.transport.play',
+    type: 'noteon',
+    ch: 1,
+    code: 77,
+    name: 'Draft Play Candidate',
+  }];
+  const rawEvent = {
+    type: 'noteon',
+    ch: 1,
+    d1: 77,
+    d2: 127,
+    value: 127,
+    __flxDebug: true,
+    __flxDebugSource: 'fallback-map-review',
+  };
+  const renderPlan = resolveInfoRenderPlan(rawEvent, mapEntries);
+  const snapshot = buildDebuggerEventSnapshot({
+    ...rawEvent,
+    _boardRender: {
+      ...renderPlan,
+      applied: false,
+      outcome: 'absent',
+      detail: 'no-render-target',
+    },
+  });
+  const inspection = buildDebuggerBoardInspectionSnapshot('play_L', {
+    mapEntries,
+    recentSnapshots: [snapshot],
+    preferredSnapshot: snapshot,
+  });
+
+  assert.equal(snapshot.render.targetId, null);
+  assert.equal(snapshot.render.authority, 'unmapped');
+  assert.equal(snapshot.render.ownership, 'unknown');
+  assert.equal(snapshot.render.boardUpdated, 'no');
+  assert.equal(snapshot.authority.resolutionOwner, 'unknown');
+  assert.equal(inspection.officialSource.status, 'official');
+  assert.equal(inspection.compatibilityMappings.length, 1);
+  assert.equal(inspection.compatibilityMappings[0].ownership, 'draft');
+  assert.equal(inspection.compatibilityMappings[0].reviewState, 'blocked');
+  assert.equal(inspection.mappingReview.authoritativeOwner, 'official');
+  assert.equal(inspection.relatedEvent, null);
+});
+
 test('board inspection links a control back to official truth, separate draft mappings, and recent event context', () => {
   const state = createControllerState({ profileId: flx6Profile.id });
   const resolved = resolveFromRaw(createFlx6RawInput({

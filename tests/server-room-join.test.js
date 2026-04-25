@@ -382,6 +382,70 @@ test('legacy map:get auto-joins safely while hello and ping do not', async () =>
   }
 });
 
+test('room map sync is provisional state and stays separate from official controller events', async () => {
+  const server = await startServer({
+    maps: {
+      alpha: [{
+        key: 'noteon:1:11',
+        target: 'cue_R',
+        ownership: 'official',
+        canonicalTarget: 'deck.left.transport.play',
+      }],
+    },
+  });
+
+  try {
+    const host = await openClient({ wsPort: server.wsPort, role: 'host', room: 'alpha' });
+    host.ws.send(JSON.stringify({ type: 'join', role: 'host', room: 'alpha' }));
+    await waitFor(() => host.messages.some((msg) => msg.type === 'presence' && msg.room === 'alpha'));
+
+    const viewer = await openClient({ wsPort: server.wsPort, role: 'viewer', room: 'alpha' });
+    viewer.ws.send(JSON.stringify({ type: 'join', role: 'viewer', room: 'alpha' }));
+    await waitFor(() => viewer.messages.some((msg) => msg.type === 'map:sync' && msg.room === 'alpha'));
+
+    const mapFrame = viewer.messages.find((msg) => msg.type === 'map:sync' && msg.room === 'alpha');
+    assert.equal(mapFrame.mapAuthority, 'draft');
+    assert.equal(mapFrame.mapState, 'provisional');
+    assert.equal(mapFrame.controllerTruth, false);
+    assert.equal(mapFrame.truthStatus, undefined);
+
+    clearMessages(viewer.messages);
+    host.ws.send(JSON.stringify({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        profileId: 'pioneer-ddj-flx6',
+        canonicalTarget: 'deck.left.transport.play',
+        mappingId: 'deck.left.transport.play.main.press',
+        mapped: true,
+        truthStatus: 'official',
+        render: {
+          targetId: 'play_L',
+          truthStatus: 'official',
+          source: 'profile-ui',
+        },
+        interaction: 'noteon',
+        type: 'noteon',
+        ch: 1,
+        d1: 11,
+        d2: 127,
+        value: 127,
+      },
+    }));
+    await waitFor(() => viewer.messages.some((msg) => msg.type === 'controller_event' && msg.room === 'alpha'));
+
+    const eventFrame = viewer.messages.find((msg) => msg.type === 'controller_event' && msg.room === 'alpha');
+    assert.equal(eventFrame.event.truthStatus, 'official');
+    assert.equal(eventFrame.event.render.targetId, 'play_L');
+    assert.equal(eventFrame.event.render.truthStatus, 'official');
+
+    await closeClient(viewer.ws);
+    await closeClient(host.ws);
+  } finally {
+    await server.stop();
+  }
+});
+
 test('malformed HTTP clients are contained and the server keeps accepting websocket traffic', async () => {
   const server = await startServer();
 

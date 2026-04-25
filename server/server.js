@@ -479,6 +479,8 @@ function broadcast(obj) {
 // === Rooms with presence + lastMap (+ lastKey) ==============================
 // roomName -> { hosts:Set<WebSocket>, viewers:Set<WebSocket>, lastMap:Array|null, lastKey:string|null }
 const rooms = new Map();
+const ROOM_MAP_AUTHORITY = 'draft';
+const ROOM_MAP_STATE = 'provisional';
 const AUTO_JOIN_TYPES = new Set([
   'map:get',
   'map:set',
@@ -499,6 +501,18 @@ function getRoom(roomName) {
     });
   }
   return rooms.get(roomName);
+}
+
+function createRoomMapSyncFrame(roomName, roomState) {
+  return {
+    type: 'map:sync',
+    room: roomName,
+    map: roomState.lastMap,
+    key: roomState.lastKey,
+    mapAuthority: ROOM_MAP_AUTHORITY,
+    mapState: ROOM_MAP_STATE,
+    controllerTruth: false,
+  };
 }
 
 function syncSessionForRoom(roomName) {
@@ -628,7 +642,7 @@ function joinSocket(ws, { role, room, metadata } = {}) {
     broadcastPresence(ws.room);
 
     if (ws.role === 'viewer' && r.lastMap && Array.isArray(r.lastMap) && r.lastMap.length) {
-      send(ws, { type: 'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey });
+      send(ws, createRoomMapSyncFrame(ws.room, r));
     }
   }
 
@@ -899,7 +913,7 @@ wss.on('connection', (ws, req) => {
           r.lastMap = msg.map;
           r.lastKey = inKey;
           // broadcast to viewers only (RAW, not wrapped)
-          broadcastToViewers_raw(ws.room, { type:'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey }, ws);
+          broadcastToViewers_raw(ws.room, createRoomMapSyncFrame(ws.room, r), ws);
           scheduleSave(); // optional: persist to disk
           console.log(`[MAP] ${msg.type} room="${ws.room}" entries=${msg.map.length}`);
         }
@@ -913,7 +927,7 @@ wss.on('connection', (ws, req) => {
       if (msg.type === 'map:get' && ws.room) {
         const r = getRoom(ws.room);
         if (r.lastMap && Array.isArray(r.lastMap) && r.lastMap.length) {
-          send(ws, { type:'map:sync', room: ws.room, map: r.lastMap, key: r.lastKey });
+          send(ws, createRoomMapSyncFrame(ws.room, r));
         } else {
           send(ws, { type:'map:empty', room: ws.room });
         }

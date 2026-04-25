@@ -10,7 +10,7 @@ const DEFAULT_FALLBACK_MAP_OWNERSHIP = 'fallback';
 
 function normalizeOwnership(value, fallback = DEFAULT_REMOTE_MAP_OWNERSHIP) {
   const text = String(value || '').trim().toLowerCase();
-  return text === 'official' || text === 'draft' || text === 'fallback'
+  return text === 'draft' || text === 'fallback'
     ? text
     : fallback;
 }

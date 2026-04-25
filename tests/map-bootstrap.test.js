@@ -27,6 +27,51 @@ test('applyRemoteMap is the canonical remote map applier', () => {
   }
 });
 
+test('empty remote maps cannot wipe the current learned-map metadata', () => {
+  const env = installMockBrowser();
+  const currentMap = [{ key: 'cc:1:22', target: 'jog_L' }];
+  const expectedMap = [{ key: 'cc:1:22', target: 'jog_L', ownership: 'draft' }];
+
+  try {
+    assert.equal(applyRemoteMap(currentMap), true);
+    assert.equal(applyRemoteMap([]), false);
+    assert.equal(applyRemoteMap({}), false);
+
+    assert.deepEqual(env.window.__currentMap, expectedMap);
+    assert.equal(env.window.__currentMapOwnership, 'draft');
+    assert.equal(env.localStorage.getItem(MAP_CACHE_KEY), JSON.stringify(expectedMap));
+    assert.equal(env.dispatchedEvents.length, 1);
+  } finally {
+    env.restore();
+  }
+});
+
+test('remote and cached learned maps cannot claim official ownership', async () => {
+  const env = installMockBrowser();
+  const claimedOfficialMap = [{
+    key: 'noteon:1:11',
+    target: 'play_L',
+    ownership: 'official',
+  }];
+  const expectedDraftMap = [{
+    key: 'noteon:1:11',
+    target: 'play_L',
+    ownership: 'draft',
+  }];
+
+  try {
+    assert.equal(applyRemoteMap(claimedOfficialMap), true);
+    assert.deepEqual(env.window.__currentMap, expectedDraftMap);
+    assert.equal(env.window.__currentMapOwnership, 'draft');
+    assert.equal(env.localStorage.getItem(MAP_CACHE_KEY), JSON.stringify(expectedDraftMap));
+
+    const cachedMap = await loadFallbackMap();
+    assert.deepEqual(cachedMap, expectedDraftMap);
+  } finally {
+    env.restore();
+  }
+});
+
 test('loadFallbackMap prefers cached learned map before static fallback', async () => {
   let fetchCalls = 0;
   const env = installMockBrowser({

@@ -15,7 +15,7 @@ function keyFromParts(type, ch, code) {
 }
 function normalizeOwnership(value, fallback = DEFAULT_MAPPING_OWNERSHIP) {
   const text = String(value || '').trim().toLowerCase();
-  return text === 'official' || text === 'draft' || text === 'fallback'
+  return text === 'draft' || text === 'fallback'
     ? text
     : fallback;
 }
