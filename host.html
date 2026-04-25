@@ -51,6 +51,10 @@
     import { bootMIDIFromQuery } from '/src/midi.js';
     import { recorder as FLXRec } from '/src/recorder.js';
     import * as RECUI   from '/src/recorder_ui.js';
+    import {
+      createReplayDownloadFilename,
+      sessionReplayLibrary,
+    } from '/src/session-replay-library.js';
     import * as DIAG    from '/src/diag.js';
     import * as PRESETS from '/src/presets.js';
     import * as EDIT    from '/src/editmode.js';
@@ -419,6 +423,30 @@
      * Launcher (menus + panels)
      ****************************************************************/
     const stageEl = document.getElementById('boardHost');  /* single declaration */
+    function getCurrentReplayPayload() {
+      return JSON.parse(FLXRec.exportJSON());
+    }
+
+    function downloadReplayPayload(payload, filename = 'session-replay.json') {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.download = filename;
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function loadSavedReplay(replayId) {
+      const record = sessionReplayLibrary.loadReplay(replayId);
+      if (!record) return null;
+      FLXRec.loadFromObject(record.payload);
+      RECUI.refresh();
+      return record;
+    }
+
     const launcherActions = {
       // Panels
       toggleDiag:     () => DIAG.toggle(),
@@ -445,8 +473,20 @@
       recStart:       () => { FLXRec.start(); setTimeout(()=>RECUI.refresh(), 50); },
       recStop:        () => { FLXRec.stop();  RECUI.refresh(); },
       recPlay:        () => FLXRec.play({ speed: 1.0, loop: false }),
-      recSave:        () => FLXRec.download('take.json'),
+      recDownload:    () => FLXRec.download('take.json'),
+      recSaveLocal:   ({ name } = {}) => sessionReplayLibrary.saveReplay({ name, payload: getCurrentReplayPayload() }),
       recLoadText:    async (text) => { await FLXRec.loadFromText(text); RECUI.refresh(); },
+      listSavedReplays: () => sessionReplayLibrary.listReplays(),
+      recLoadSaved:   (replayId) => loadSavedReplay(replayId),
+      recPlaySaved:   (replayId) => {
+        const record = loadSavedReplay(replayId);
+        if (record) FLXRec.play({ speed: 1.0, loop: false });
+      },
+      recDownloadSaved: (replayId) => {
+        const record = sessionReplayLibrary.loadReplay(replayId);
+        if (record) downloadReplayPayload(record.payload, createReplayDownloadFilename(record));
+      },
+      recDeleteSaved: (replayId) => sessionReplayLibrary.deleteReplay(replayId),
     };
     launcher = initLauncher({
       actions: launcherActions,

@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import { resolveInfoRenderPlan } from '../src/board.js';
 import { buildDebuggerEventSnapshot } from '../src/event-log-snapshot.js';
 import { createRecorder } from '../src/recorder.js';
+import { getRuntimeApp } from '../src/runtime/app-bridge.js';
 import {
   RECORDER_EVENT_SCHEMA,
   RECORDER_LOG_SCHEMA,
   RECORDER_LOG_VERSION,
+  RECORDER_METADATA_SCHEMA,
   RECORDER_REPLAY_SCHEMA,
 } from '../src/recorder/schema.js';
 import { createRawInputEvent, normalizeRawInputEvent } from '../src/controllers/core/normalization.js';
@@ -128,6 +130,11 @@ test('recorder captures post-consume board resolution as structured log data', (
     const exported = JSON.parse(recorder.exportJSON());
     assert.equal(exported.version, RECORDER_LOG_VERSION);
     assert.equal(exported.schema, RECORDER_LOG_SCHEMA);
+    assert.equal(exported.metadata.schema, RECORDER_METADATA_SCHEMA);
+    assert.equal(exported.metadata.recorder.schema, RECORDER_LOG_SCHEMA);
+    assert.equal(exported.metadata.recorder.version, RECORDER_LOG_VERSION);
+    assert.equal(exported.metadata.durationMs, exported.durationMs);
+    assert.equal(exported.metadata.eventCount, exported.eventCount);
     assert.equal(exported.capture.replaySchema, RECORDER_REPLAY_SCHEMA);
     assert.equal(exported.capture.eventSchema, RECORDER_EVENT_SCHEMA);
     assert.equal(exported.eventCount, 1);
@@ -139,6 +146,72 @@ test('recorder captures post-consume board resolution as structured log data', (
     assert.equal(exported.events[0].event.id, undefined);
   } finally {
     recorder.uninstall();
+    globalThis.window = originalWindow;
+  }
+});
+
+test('recorder export metadata is additive and keeps v3 event payloads compatible', () => {
+  const recorder = createRecorder();
+  const originalWindow = globalThis.window;
+  const legacyEvent = attachBoardRender(createResolvedPlayEvent());
+
+  globalThis.window = {
+    location: new URL('http://localhost/host.html?room=alpha&mode=remote&visibility=private&sessionTitle=Warehouse%20Warmup&hostName=Rafa'),
+  };
+
+  try {
+    getRuntimeApp().setControllerRuntime({
+      profileId: flx6Profile.id,
+      profileLabel: flx6Profile.displayName,
+      deviceName: 'Pioneer DDJ-FLX6',
+      ready: true,
+    });
+
+    recorder.loadFromObject({
+      version: RECORDER_LOG_VERSION,
+      schema: RECORDER_LOG_SCHEMA,
+      speed: 1,
+      events: [
+        {
+          timing: {
+            order: 1,
+            relativeMs: 1250,
+            capturedAtMs: 1300,
+            sourceTimestampMs: 123,
+          },
+          replay: {
+            schema: RECORDER_REPLAY_SCHEMA,
+            info: legacyEvent,
+          },
+          event: buildDebuggerEventSnapshot(legacyEvent),
+        },
+      ],
+    });
+
+    const exported = JSON.parse(recorder.exportJSON());
+
+    assert.equal(exported.version, RECORDER_LOG_VERSION);
+    assert.equal(exported.schema, RECORDER_LOG_SCHEMA);
+    assert.equal(exported.durationMs, 1250);
+    assert.equal(exported.eventCount, 1);
+    assert.equal(exported.metadata.schema, RECORDER_METADATA_SCHEMA);
+    assert.equal(exported.metadata.appName, 'Sets In Context DDJ-FLX6 Runtime');
+    assert.match(exported.metadata.createdAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(exported.metadata.recorder.schema, RECORDER_LOG_SCHEMA);
+    assert.equal(exported.metadata.recorder.version, RECORDER_LOG_VERSION);
+    assert.equal(exported.metadata.durationMs, 1250);
+    assert.equal(exported.metadata.eventCount, 1);
+    assert.equal(exported.metadata.session.room, 'alpha');
+    assert.equal(exported.metadata.session.mode, 'remote');
+    assert.equal(exported.metadata.session.visibility, 'private');
+    assert.equal(exported.metadata.session.title, 'Warehouse Warmup');
+    assert.equal(exported.metadata.session.sessionTitle, 'Warehouse Warmup');
+    assert.equal(exported.metadata.session.hostName, 'Rafa');
+    assert.equal(exported.metadata.device.profileId, flx6Profile.id);
+    assert.equal(exported.metadata.device.deviceName, 'Pioneer DDJ-FLX6');
+    assert.equal(exported.events[0].replay.schema, RECORDER_REPLAY_SCHEMA);
+    assert.equal(exported.events[0].event.render.targetId, 'play_L');
+  } finally {
     globalThis.window = originalWindow;
   }
 });
@@ -260,4 +333,81 @@ test('recorder loads v3 recordings with explicit timing, replay payload, and str
   assert.equal(entry.event.render.targetId, 'play_L');
   assert.equal(entry.event.id, undefined);
   assert.equal(entry.logEvent.summary, 'Structured recorder event');
+});
+
+test('recorder playback marks consumed events as replay-originated', async () => {
+  const recorder = createRecorder();
+  const originalWindow = globalThis.window;
+  const consumed = [];
+  const observed = [];
+
+  globalThis.window = {
+    consumeInfo(info) {
+      consumed.push(info);
+      return info;
+    },
+  };
+
+  try {
+    recorder.loadFromObject({
+      speed: 1,
+      events: [
+        { t: 0, info: attachBoardRender(createResolvedPlayEvent()) },
+      ],
+    });
+
+    recorder.play({
+      onEvent(info) {
+        observed.push(info);
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.equal(observed.length, 1);
+    assert.equal(consumed.length, 1);
+    assert.equal(observed[0].playback, true);
+    assert.equal(observed[0].replaySource, 'session-replay');
+    assert.equal(observed[0]._playback.source, 'session-replay');
+    assert.equal(consumed[0].playback, true);
+    assert.equal(consumed[0]._playback.entryIndex, 0);
+  } finally {
+    recorder.stopPlayback();
+    globalThis.window = originalWindow;
+  }
+});
+
+test('recorder does not self-record replay events by default', async () => {
+  const recorder = createRecorder();
+  const originalWindow = globalThis.window;
+  const consumed = [];
+
+  globalThis.window = {
+    consumeInfo(info) {
+      consumed.push(info);
+      return info;
+    },
+  };
+
+  try {
+    recorder.install();
+    recorder.start();
+    recorder.loadFromObject({
+      speed: 1,
+      events: [
+        { t: 0, info: attachBoardRender(createResolvedPlayEvent()) },
+      ],
+    });
+
+    recorder.play();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.equal(consumed.length, 1);
+    assert.equal(consumed[0].playback, true);
+    assert.equal(recorder.events.length, 1);
+  } finally {
+    recorder.stopPlayback();
+    recorder.uninstall();
+    globalThis.window = originalWindow;
+  }
 });

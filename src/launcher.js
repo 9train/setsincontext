@@ -56,6 +56,23 @@ function getSectionDef(key) {
   return SECTION_DEFS.find((section) => section.key === key) || SECTION_DEFS[0];
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function fmtReplayDuration(ms) {
+  const seconds = Math.max(0, Number(ms) || 0) / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const mins = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60).toString().padStart(2, '0');
+  return `${mins}:${rest}`;
+}
+
 function renderStatusItem(label, model = {}, suffix = '') {
   const item = document.createElement('div');
   item.className = 'launcher-status-item';
@@ -158,15 +175,27 @@ export function initLauncher({
             <div class="launcher-card-title">Capture controls</div>
             <div class="launcher-card-copy">Capture live sessions, replay them, or move JSON recordings in and out without leaving the host.</div>
             <div class="launcher-action-row">
-              <button type="button" id="recStart" data-act="recStart">Rec</button>
-              <button type="button" id="recStop" data-act="recStop">Stop</button>
-              <button type="button" id="recPlay" data-act="recPlay">Play</button>
-              <button type="button" id="recSave" data-act="recSave">Save JSON</button>
+              <button type="button" id="recStart" data-act="recStart">Start Recording</button>
+              <button type="button" id="recStop" data-act="recStop">Stop Recording</button>
+              <button type="button" id="recPlay" data-act="recPlay">Replay</button>
+              <button type="button" id="recDownload" data-act="recDownload">Download JSON</button>
+            </div>
+            <label class="launcher-file-row">
+              <span>Name replay</span>
+              <input id="recName" type="text" autocomplete="off" placeholder="Practice take" />
+            </label>
+            <div class="launcher-action-row">
+              <button type="button" id="recSaveLocal" data-act="recSaveLocal">Save to this browser</button>
             </div>
             <label id="recLoadWrap" class="launcher-file-row">
               <span>Load JSON</span>
               <input id="recLoad" type="file" accept="application/json" />
             </label>
+          </article>
+          <article class="launcher-card">
+            <div class="launcher-card-title">Saved replays</div>
+            <div class="launcher-card-copy">Local browser replay memory stays on this device and can be exported as JSON when needed.</div>
+            <div id="savedReplayList" class="launcher-saved-replay-list" aria-live="polite"></div>
           </article>
           <article class="launcher-card">
             <div class="launcher-card-title">Timeline</div>
@@ -257,6 +286,8 @@ export function initLauncher({
   const diagClearBtn = sheet.querySelector('#launcherDiagClear');
   const editToggleBtn = sheet.querySelector('#launcherEditToggle');
   const recLoadInput = sheet.querySelector('#recLoad');
+  const recNameInput = sheet.querySelector('#recName');
+  const savedReplayList = sheet.querySelector('#savedReplayList');
   const presetMount = sheet.querySelector('#launcherPresetMount');
   const sectionEls = new Map(
     [...sheet.querySelectorAll('.launcher-section')].map((section) => [section.dataset.section, section]),
@@ -303,10 +334,44 @@ export function initLauncher({
     editToggleBtn.dataset.act = editOpen ? 'hideEdit' : 'showEdit';
   }
 
+  function refreshRecordingSection() {
+    if (!savedReplayList) return;
+    const list = typeof actions.listSavedReplays === 'function' ? actions.listSavedReplays() || [] : [];
+    if (!list.length) {
+      savedReplayList.innerHTML = '<div class="launcher-card-copy">No saved replays in this browser yet.</div>';
+      return;
+    }
+    savedReplayList.innerHTML = list.map((record) => {
+      const replayId = escapeHtml(record.replayId);
+      const name = escapeHtml(record.name || record.title || 'Untitled replay');
+      const bits = [
+        record.eventCount != null ? `${Number(record.eventCount) || 0} events` : null,
+        record.durationMs != null ? fmtReplayDuration(record.durationMs) : null,
+        record.room ? `room ${record.room}` : null,
+        record.hostName ? `host ${record.hostName}` : null,
+      ].filter(Boolean).map(escapeHtml).join(' · ');
+      return `
+        <div class="launcher-saved-replay" data-replay-id="${replayId}">
+          <div class="launcher-saved-replay-copy">
+            <strong>${name}</strong>
+            <span>${bits || 'Replay'}</span>
+          </div>
+          <div class="launcher-action-row">
+            <button type="button" data-replay-action="load" data-replay-id="${replayId}">Load</button>
+            <button type="button" data-replay-action="play" data-replay-id="${replayId}">Play</button>
+            <button type="button" data-replay-action="download" data-replay-id="${replayId}">Download</button>
+            <button type="button" data-replay-action="delete" data-replay-id="${replayId}">Delete</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
   function refreshVisibleSection() {
     refreshStatusSection();
     refreshDiagnosticsSection();
     refreshMappingSection();
+    refreshRecordingSection();
   }
 
   function showDashboard() {
@@ -358,7 +423,7 @@ export function initLauncher({
     openSection(key);
   }
 
-  async function invokeAction(name) {
+  async function invokeAction(name, detail = {}) {
     if (!name) return;
 
     if (name === 'openDiagnosticsReview') {
@@ -370,7 +435,21 @@ export function initLauncher({
 
     const fn = actions[name];
     if (typeof fn !== 'function') return;
-    await fn();
+    await fn(detail);
+    refreshVisibleSection();
+  }
+
+  async function invokeReplayAction(name, replayId) {
+    if (!name || !replayId) return;
+    const actionMap = {
+      load: 'recLoadSaved',
+      play: 'recPlaySaved',
+      download: 'recDownloadSaved',
+      delete: 'recDeleteSaved',
+    };
+    const fn = actions[actionMap[name]];
+    if (typeof fn !== 'function') return;
+    await fn(replayId);
     refreshVisibleSection();
   }
 
@@ -440,7 +519,18 @@ export function initLauncher({
 
     const actionTrigger = event.target.closest('[data-act]');
     if (actionTrigger) {
-      await invokeAction(actionTrigger.getAttribute('data-act'));
+      await invokeAction(actionTrigger.getAttribute('data-act'), {
+        name: recNameInput?.value || '',
+      });
+      return;
+    }
+
+    const replayTrigger = event.target.closest('[data-replay-action]');
+    if (replayTrigger) {
+      await invokeReplayAction(
+        replayTrigger.getAttribute('data-replay-action'),
+        replayTrigger.getAttribute('data-replay-id'),
+      );
     }
   });
 

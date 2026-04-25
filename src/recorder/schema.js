@@ -4,6 +4,8 @@ export const RECORDER_LOG_VERSION = 3;
 export const RECORDER_LOG_SCHEMA = 'flx-recorder-log/v3';
 export const RECORDER_EVENT_SCHEMA = 'flx-recorded-event/v1';
 export const RECORDER_REPLAY_SCHEMA = 'consume-info/v1';
+export const RECORDER_METADATA_SCHEMA = 'flx-recorder-metadata/v1';
+export const RECORDER_APP_NAME = 'Sets In Context DDJ-FLX6 Runtime';
 
 export const RECORDER_CAPTURE_META = Object.freeze({
   source: 'runtime-app.consumeInfo',
@@ -16,6 +18,28 @@ export const RECORDER_CAPTURE_META = Object.freeze({
 function asNumber(value, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function asString(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function compactObject(value) {
+  if (!value || typeof value !== 'object') return null;
+  const entries = Object.entries(value)
+    .map(([key, entry]) => [key, asString(entry)])
+    .filter(([, entry]) => entry != null);
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+function normalizeCreatedAt(value) {
+  if (value == null) return new Date().toISOString();
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString();
+  const parsed = new Date(value);
+  if (Number.isFinite(parsed.getTime())) return parsed.toISOString();
+  return new Date().toISOString();
 }
 
 export function cloneRecordingValue(value) {
@@ -167,18 +191,65 @@ export function serializeRecordedEntry(entry) {
   };
 }
 
+export function calculateRecordingDurationMs(events = []) {
+  if (!Array.isArray(events) || !events.length) return 0;
+  return events.reduce((max, entry) => {
+    const timing = entry && entry.timing && typeof entry.timing === 'object' ? entry.timing : null;
+    const relativeMs = timing && timing.relativeMs != null ? timing.relativeMs : entry && entry.t;
+    return Math.max(max, asNumber(relativeMs, 0));
+  }, 0);
+}
+
+export function createRecordingMetadata(options = {}) {
+  const eventCount = Math.max(0, asNumber(options.eventCount, 0));
+  const durationMs = Math.max(0, asNumber(options.durationMs, 0));
+  const existing = options.metadata && typeof options.metadata === 'object' ? options.metadata : {};
+  const existingRecorder = existing.recorder && typeof existing.recorder === 'object' ? existing.recorder : {};
+  const session = compactObject({
+    ...(existing.session && typeof existing.session === 'object' ? existing.session : {}),
+    ...(options.session && typeof options.session === 'object' ? options.session : {}),
+  });
+  const device = compactObject({
+    ...(existing.device && typeof existing.device === 'object' ? existing.device : {}),
+    ...(options.device && typeof options.device === 'object' ? options.device : {}),
+  });
+
+  return {
+    schema: RECORDER_METADATA_SCHEMA,
+    appName: asString(options.appName) || asString(existing.appName) || RECORDER_APP_NAME,
+    createdAt: normalizeCreatedAt(options.createdAt || existing.createdAt),
+    recorder: {
+      schema: asString(options.recorderSchema) || asString(existingRecorder.schema) || RECORDER_LOG_SCHEMA,
+      version: asNumber(options.recorderVersion ?? existingRecorder.version, RECORDER_LOG_VERSION),
+    },
+    durationMs,
+    eventCount,
+    ...(session ? { session } : {}),
+    ...(device ? { device } : {}),
+  };
+}
+
 export function createRecordingExportObject(options = {}) {
   const events = Array.isArray(options.events) ? options.events : [];
   const serializedEvents = events
     .map((entry) => serializeRecordedEntry(entry))
     .filter(Boolean);
+  const durationMs = calculateRecordingDurationMs(serializedEvents);
+  const eventCount = serializedEvents.length;
+  const metadata = createRecordingMetadata({
+    ...options,
+    durationMs,
+    eventCount,
+  });
 
   return {
     version: RECORDER_LOG_VERSION,
     schema: RECORDER_LOG_SCHEMA,
+    metadata,
     capture: RECORDER_CAPTURE_META,
     speed: Number(options.speed) || 1,
-    eventCount: serializedEvents.length,
+    durationMs,
+    eventCount,
     events: serializedEvents,
   };
 }

@@ -6,6 +6,7 @@
 import {
   createRecordedEntry,
   createRecordingExportObject,
+  cloneRecordingValue,
   normalizeLoadedRecordedEntry,
   RECORDER_LOG_SCHEMA,
 } from './recorder/schema.js';
@@ -26,6 +27,75 @@ function hashInfo(info) {
   return `${t}|${info.ch}|${code}|${v}`;
 }
 
+function compactString(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function compactObject(value) {
+  const entries = Object.entries(value || {}).filter(([, entry]) => compactString(entry) != null);
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+function getSearchParams() {
+  try {
+    const locationRef = (typeof window !== 'undefined' && window.location) || globalThis.location;
+    return new URLSearchParams(locationRef?.search || '');
+  } catch {
+    return new URLSearchParams();
+  }
+}
+
+function collectRuntimeExportMetadata() {
+  const runtimeApp = getRuntimeApp();
+  const params = getSearchParams();
+  const relay = runtimeApp?.getRelayRuntime?.() || {};
+  const controller = runtimeApp?.getControllerRuntime?.() || {};
+  const sessionTitle = params.get('sessionTitle') || params.get('title');
+
+  return {
+    session: compactObject({
+      room: relay.room || params.get('room'),
+      mode: params.get('mode'),
+      visibility: params.get('visibility'),
+      title: params.get('title') || sessionTitle,
+      sessionTitle,
+      hostName: params.get('hostName'),
+    }),
+    device: compactObject({
+      profileId: controller.profileId,
+      profileLabel: controller.profileLabel,
+      deviceName: controller.deviceName,
+    }),
+  };
+}
+
+function isReplayOriginated(info) {
+  return info && typeof info === 'object' && (
+    info.playback === true ||
+    info.replaySource === 'session-replay' ||
+    (info._playback && info._playback.source === 'session-replay')
+  );
+}
+
+function markReplayInfo(info, { entryIndex = 0, entry = null } = {}) {
+  const replayInfo = cloneRecordingValue(info || {});
+  replayInfo.playback = true;
+  replayInfo.replaySource = 'session-replay';
+  replayInfo._playback = {
+    source: 'session-replay',
+    playback: true,
+    entryIndex,
+    timingMs: entry && entry.timing && entry.timing.relativeMs != null
+      ? entry.timing.relativeMs
+      : entry && entry.t != null
+        ? entry.t
+        : null,
+  };
+  return replayInfo;
+}
+
 export function createRecorder() {
   let removeConsumeTap = null;
   const consumeTapKey = Symbol('recorder');
@@ -40,6 +110,7 @@ export function createRecorder() {
     _onEvent: null,       // optional callback during playback
     speed: 1.0,
     loop: false,
+    recordReplay: false,
   };
 
   function publishRecorderStatus(status = state.isRecording ? 'recording' : 'ready') {
@@ -56,6 +127,7 @@ export function createRecorder() {
 
   function record(info) {
     if (!state.isRecording) return;
+    if (!state.recordReplay && isReplayOriginated(info)) return;
     const ts = now();
 
     // Deduplicate very-near duplicates (e.g., WS + WebMIDI)
@@ -96,11 +168,12 @@ export function createRecorder() {
   function wrapConsume() { install(); }
   function unwrapConsume() { uninstall(); }
 
-  function start({ dedupMs = 6 } = {}) {
+  function start({ dedupMs = 6, recordReplay = false } = {}) {
     if (!removeConsumeTap) install();
     state.events.length = 0;
     state._recent.clear();
     state.dedupMs = dedupMs;
+    state.recordReplay = recordReplay === true;
     state.startedAt = now();
     state.isRecording = true;
     publishRecorderStatus('recording');
@@ -117,15 +190,18 @@ export function createRecorder() {
   function clear() {
     state.events.length = 0;
     state._recent.clear();
+    state.recordReplay = false;
     if (removeConsumeTap) publishRecorderStatus(state.isRecording ? 'recording' : 'ready');
     console.log('%c[Recorder] Cleared buffer.', 'color:#6ea8fe');
   }
 
   function exportJSON() {
+    const runtimeMetadata = collectRuntimeExportMetadata();
     return JSON.stringify(
       createRecordingExportObject({
         speed: state.speed,
         events: state.events,
+        ...runtimeMetadata,
       }),
       null, 2
     );
@@ -192,8 +268,9 @@ export function createRecorder() {
       const delay = Math.max(0, t * scale);
       const tid = setTimeout(() => {
         try {
-          if (state._onEvent) state._onEvent(info, idx, entry);
-          runtimeApp.consumeInfo(info);
+          const playbackInfo = markReplayInfo(info, { entryIndex: idx, entry });
+          if (state._onEvent) state._onEvent(playbackInfo, idx, entry);
+          runtimeApp.consumeInfo(playbackInfo);
         } catch (e) {
           console.warn('[Recorder] playback error', e);
         }

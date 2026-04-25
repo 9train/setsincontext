@@ -28,6 +28,66 @@ The parent directory is created automatically when the first write occurs. Write
 
 Local runtime JSON files should not be committed. This repo ignores common local persistence paths such as `data/*.json`, `.runtime-data/`, and `.session-store/`.
 
+## Local Persistence Smoke Checklist
+
+Use this manual smoke before a demo deploy or after changing persistence code. It uses the existing runtime pages and APIs; it does not require auth, accounts, or a database.
+
+1. Start the runtime with the local JSON store enabled:
+
+   ```sh
+   SESSION_STORE_FILE=.runtime-data/sessions.json npm start
+   ```
+
+2. Open a private host session in a browser:
+
+   ```text
+   http://127.0.0.1:8080/host.html?room=stage45-smoke&ws=ws://127.0.0.1:8787&mode=remote&visibility=private&sessionTitle=Stage%204.5%20Smoke&hostName=Local%20Host&hostAccess=stage45-host-token
+   ```
+
+   Keep the host page open until the private invite panel says the invite is ready. The first session write should create `.runtime-data/` and `.runtime-data/sessions.json` automatically.
+
+3. Copy the private viewer invite URL from the host page. Open it in another browser tab and confirm the viewer joins. Save the `access=` value from that copied URL for the token checks below.
+
+4. Confirm the local store file exists:
+
+   ```sh
+   test -f .runtime-data/sessions.json && echo "session store exists"
+   ```
+
+5. Confirm raw smoke tokens are not stored. Replace `PASTE_VIEWER_ACCESS_TOKEN_HERE` with the copied `access=` value:
+
+   ```sh
+   SMOKE_VIEWER_TOKEN='PASTE_VIEWER_ACCESS_TOKEN_HERE' node -e "const fs=require('fs'); const text=fs.readFileSync('.runtime-data/sessions.json','utf8'); const leaks=['stage45-host-token', process.env.SMOKE_VIEWER_TOKEN].filter(Boolean).filter((token)=>text.includes(token)); if (leaks.length) { console.error('raw token persisted:', leaks.join(', ')); process.exit(1); } console.log('raw smoke tokens absent');"
+   ```
+
+   The JSON should contain `tokenHash` values for invites, not raw host or viewer access tokens.
+
+6. Stop the server with `Ctrl+C`. Closing the host and viewer tabs first is fine; after the sockets disconnect, the stored session should be marked `ended`.
+
+7. Restart with the same persistence command:
+
+   ```sh
+   SESSION_STORE_FILE=.runtime-data/sessions.json npm start
+   ```
+
+8. Reopen the copied private viewer invite URL. It should still resolve because the stored invite hash can verify the URL token after restart.
+
+9. Reopen the host URL from step 2. It should reuse the same durable private session when the `hostAccess` token verifies against the stored host-access hash.
+
+10. Inspect the JSON store:
+
+    ```sh
+    node -e "const fs=require('fs'); const state=JSON.parse(fs.readFileSync('.runtime-data/sessions.json','utf8')); console.log(JSON.stringify({ sessions: state.sessions?.map(({room,status,visibility,endedAt})=>({room,status,visibility,endedAt})), invites: state.invites?.map(({room,type,tokenHash,lastUsedAt,revokedAt})=>({room,type,hasTokenHash:!!tokenHash,lastUsedAt,revokedAt})) }, null, 2));"
+    ```
+
+    Confirm the `stage45-smoke` session is present, private invite records have `hasTokenHash: true`, and no raw token fields are present.
+
+11. Run the test suite:
+
+    ```sh
+    npm test
+    ```
+
 ## Deployed Node Hosts
 
 On a deployed Node host, set `SESSION_STORE_FILE` in the host's environment configuration:
