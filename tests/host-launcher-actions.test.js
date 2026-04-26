@@ -271,9 +271,6 @@ test('host.html delegates launcher actions while keeping host-owned launcher imp
     'hostStatus.setLauncher(launcher)',
     'getStatusSnapshot',
     'mountPresetUI',
-    'THEME.attachThemeDesigner',
-    'THEME.ensurePreset',
-    "e.shiftKey && e.key.toLowerCase()==='t'",
     "const stageEl = document.getElementById('boardHost')",
   ], 'host.html');
 

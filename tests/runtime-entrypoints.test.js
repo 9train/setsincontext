@@ -45,6 +45,7 @@ test('host.html is the official host page inventory', () => {
     '/src/runtime/host-draft-map-sync.js',
     '/src/runtime/host-midi-capture.js',
     '/src/runtime/host-launcher-actions.js',
+    '/src/runtime/host-theme-page.js',
     '/src/runtime/host-tools-page.js',
     '/src/midi.js',
     '/src/board.js',
@@ -293,8 +294,6 @@ test('host launcher actions module owns only extracted launcher action glue', ()
     'getStatusSnapshot',
     'mountPresetUI',
     'hostStatus.setLauncher(launcher)',
-    'THEME.attachThemeDesigner',
-    'THEME.ensurePreset',
   ], 'host.html');
   assertIncludesNone(host, [
     'function getCurrentReplayPayload',
@@ -310,6 +309,60 @@ test('host launcher actions module owns only extracted launcher action glue', ()
   ], 'viewer.html');
   assertIncludesNone(viewer, [
     '/src/runtime/host-launcher-actions.js',
+  ], 'viewer.html');
+});
+
+test('host theme page module owns only extracted host theme wiring', () => {
+  const source = readRepoFile('src/runtime/host-theme-page.js');
+  const host = readRepoFile('host.html');
+  const viewer = readRepoFile('viewer.html');
+
+  assert.match(source, /export\s+function\s+initHostThemePage\b/);
+  assertIncludesNone(source, [
+    '../midi.js',
+    '../ws.js',
+    '../board.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../diag.js',
+    '../wizard.js',
+    '../editmode.js',
+    '../launcher.js',
+    '../host-debug.js',
+    '../mapper.js',
+    '../controllers/',
+    '../theme.js',
+  ], 'src/runtime/host-theme-page.js');
+  assertIncludesNone(source, [
+    'bootMIDIFromQuery',
+    'connectWS',
+    'initBoard',
+    'boardConsume',
+    'loadMappings',
+    'sendMap',
+    'runtimeApp.setNormalizer',
+    'runtimeApp.setInfoConsumer',
+    'initLauncher',
+    'createHostLauncherActions',
+    'initHostToolsPage',
+  ], 'src/runtime/host-theme-page.js');
+
+  assert.match(host, /import\s+\{\s*initHostThemePage\s*\}\s+from\s+['"]\/src\/runtime\/host-theme-page\.js['"]/);
+  assert.match(host, /const\s+hostThemePage\s*=\s*initHostThemePage\(\{[\s\S]*THEME,[\s\S]*documentRef:\s*document,[\s\S]*windowRef:\s*window,[\s\S]*getLauncher:\s*\(\)\s*=>\s*launcher,[\s\S]*\}\)/);
+  assertIncludesAll(host, [
+    '/src/theme.js',
+    '/src/presets.js',
+    '/src/launcher.js',
+  ], 'host.html');
+  assertIncludesNone(host, [
+    'THEME.attachThemeDesigner({',
+    "THEME.ensurePreset?.('instrument-dark')",
+    "document.addEventListener('keydown', (e)=>",
+    "launcher?.toggleSection('theme')",
+    '/src/runtime/host-page.js',
+  ], 'host.html');
+  assertIncludesNone(viewer, [
+    '/src/runtime/host-theme-page.js',
   ], 'viewer.html');
 });
 

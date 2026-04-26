@@ -45,6 +45,7 @@
     import {
       createHostLauncherActions,
     } from '/src/runtime/host-launcher-actions.js';
+    import { initHostThemePage } from '/src/runtime/host-theme-page.js';
     import { initHostToolsPage } from '/src/runtime/host-tools-page.js';
     import * as THEME      from '/src/theme.js';
     import { bootMIDIFromQuery } from '/src/midi.js';
@@ -138,11 +139,12 @@
       mountPresetUI: (el) => PRESETS.attachPresetUI(el),
     });
     hostStatus.setLauncher(launcher);
-    THEME.attachThemeDesigner({
-      mount: document.getElementById('launcherThemeMount'),
-      svgRoot: document.querySelector('#boardHost svg'),
+    const hostThemePage = initHostThemePage({
+      THEME,
+      documentRef: document,
+      windowRef: window,
+      getLauncher: () => launcher,
     });
-    THEME.ensurePreset?.('instrument-dark');
 
     /****************************************************************
      * Host-only jog calibration/debug tooling
@@ -157,13 +159,6 @@
       attachJogCalibrationModal,
       installHostDebug,
       hostStatus,
-    });
-
-    /****************************************************************
-     * Toolbar + Hotkeys
-     ****************************************************************/
-    document.addEventListener('keydown', (e)=>{
-      if (e.shiftKey && e.key.toLowerCase()==='t') launcher?.toggleSection('theme');
     });
   </script>
 

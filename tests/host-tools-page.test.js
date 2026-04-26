@@ -118,7 +118,6 @@ test('host.html delegates host-only tools while keeping host boot ownership', ()
   assert.match(host, /startHostMidiCapture\(\{[\s\S]*runtimeApp,[\s\S]*hostStatus,[\s\S]*bootMIDIFromQuery,[\s\S]*\}\)/);
   assert.match(host, /createHostLauncherActions\(\{[\s\S]*DIAG,[\s\S]*RECUI,[\s\S]*WIZ,[\s\S]*EDIT,[\s\S]*THEME,[\s\S]*FLXRec,[\s\S]*runtimeApp,[\s\S]*\}\)/);
   assert.match(host, /initLauncher\(\{/);
-  assert.match(host, /THEME\.attachThemeDesigner\(/);
   assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
 
   assertIncludesNone(host, [
