@@ -40,6 +40,7 @@ test('host.html is the official host page inventory', () => {
   assertIncludesAll(host, [
     '/src/bootstrap-shared.js',
     '/src/runtime/app-bridge.js',
+    '/src/runtime/host-status-page.js',
     '/src/midi.js',
     '/src/board.js',
     '/src/bootstrap-host.js',
@@ -49,6 +50,28 @@ test('host.html is the official host page inventory', () => {
   assert.match(host, /await\s+initBoard\(\{\s*hostId:\s*['"]boardHost['"]\s*\}\)/);
   assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
   assertIncludesNone(host, canonicalForbiddenImports, 'host.html');
+});
+
+test('host status page module owns only the extracted status chrome', () => {
+  const hostStatusPage = readRepoFile('src/runtime/host-status-page.js');
+
+  assert.match(hostStatusPage, /export\s+function\s+initHostStatusChrome\b/);
+  assertIncludesAll(hostStatusPage, [
+    '../host-status.js',
+    'hostStatusChrome',
+    'hostStatusPopover',
+    'wsStatus',
+    'midiStatus',
+    'controllerStatus',
+  ], 'src/runtime/host-status-page.js');
+  assert.doesNotMatch(hostStatusPage, /\bconnectWS\b/);
+  assert.doesNotMatch(hostStatusPage, /\bbootMIDIFromQuery\b/);
+  assert.doesNotMatch(hostStatusPage, /\binitBoard\b/);
+  assertIncludesNone(hostStatusPage, [
+    '../ws.js',
+    '../midi.js',
+    '../board.js',
+  ], 'src/runtime/host-status-page.js');
 });
 
 test('viewer.html is the official viewer page inventory', () => {
