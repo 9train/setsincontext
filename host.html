@@ -42,6 +42,9 @@
     import { initHostControllerPipeline } from '/src/runtime/host-controller-pipeline.js';
     import { initHostDraftMapSync } from '/src/runtime/host-draft-map-sync.js';
     import { startHostMidiCapture } from '/src/runtime/host-midi-capture.js';
+    import {
+      createHostLauncherActions,
+    } from '/src/runtime/host-launcher-actions.js';
     import * as THEME      from '/src/theme.js';
     import { bootMIDIFromQuery } from '/src/midi.js';
     import { recorder as FLXRec } from '/src/recorder.js';
@@ -106,71 +109,22 @@
      * Launcher (menus + panels)
      ****************************************************************/
     const stageEl = document.getElementById('boardHost');  /* single declaration */
-    function getCurrentReplayPayload() {
-      return JSON.parse(FLXRec.exportJSON());
-    }
-
-    function downloadReplayPayload(payload, filename = 'session-replay.json') {
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.download = filename;
-      a.href = url;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
-
-    function loadSavedReplay(replayId) {
-      const record = sessionReplayLibrary.loadReplay(replayId);
-      if (!record) return null;
-      FLXRec.loadFromObject(record.payload);
-      RECUI.refresh();
-      return record;
-    }
-
-    const launcherActions = {
-      // Panels
-      toggleDiag:     () => DIAG.toggle(),
-      showDiag:       () => DIAG.show(),
-      hideDiag:       () => DIAG.hide(),
-      isDiagOpen:     () => DIAG.isOpen?.() ?? false,
-      toggleTimeline: () => RECUI.toggle(),
-      showTimeline:   () => RECUI.show(),
-      hideTimeline:   () => RECUI.hide?.(),
-      toggleWizard:   () => WIZ.toggle(),
-      showWizard:     () => (typeof WIZ.show === 'function' ? WIZ.show() : WIZ.toggle()),
-      toggleEdit:     () => EDIT.toggle(),
-      showEdit:       () => (typeof EDIT.show === 'function' ? EDIT.show() : EDIT.toggle()),
-      hideEdit:       () => (typeof EDIT.hide === 'function' ? EDIT.hide() : EDIT.toggle()),
-      isEditOpen:     () => EDIT.isOpen?.() ?? EDIT.onState?.() ?? false,
-      clearDiag:      () => runtimeApp.clearRecentDebuggerSnapshots?.(),
-      // Theme + view
-      toggleTheme:    () => launcher?.toggleSection('theme'),
-      applyThemePreset: (name) => THEME.applyPreset?.(name),
-      fit:            () => stageEl.classList.remove('fill'),
-      fill:           () => stageEl.classList.add('fill'),
-      toggleBG:       () => document.body.classList.toggle('transparent'),
-      // Recorder
-      recStart:       () => { FLXRec.start(); setTimeout(()=>RECUI.refresh(), 50); },
-      recStop:        () => { FLXRec.stop();  RECUI.refresh(); },
-      recPlay:        () => FLXRec.play({ speed: 1.0, loop: false }),
-      recDownload:    () => FLXRec.download('take.json'),
-      recSaveLocal:   ({ name } = {}) => sessionReplayLibrary.saveReplay({ name, payload: getCurrentReplayPayload() }),
-      recLoadText:    async (text) => { await FLXRec.loadFromText(text); RECUI.refresh(); },
-      listSavedReplays: () => sessionReplayLibrary.listReplays(),
-      recLoadSaved:   (replayId) => loadSavedReplay(replayId),
-      recPlaySaved:   (replayId) => {
-        const record = loadSavedReplay(replayId);
-        if (record) FLXRec.play({ speed: 1.0, loop: false });
-      },
-      recDownloadSaved: (replayId) => {
-        const record = sessionReplayLibrary.loadReplay(replayId);
-        if (record) downloadReplayPayload(record.payload, createReplayDownloadFilename(record));
-      },
-      recDeleteSaved: (replayId) => sessionReplayLibrary.deleteReplay(replayId),
-    };
+    const launcherActions = createHostLauncherActions({
+      DIAG,
+      RECUI,
+      WIZ,
+      EDIT,
+      THEME,
+      FLXRec,
+      runtimeApp,
+      sessionReplayLibrary,
+      createReplayDownloadFilename,
+      stageEl,
+      documentRef: document,
+      URLRef: URL,
+      setTimeoutRef: window.setTimeout.bind(window),
+      getLauncher: () => launcher,
+    });
     launcher = initLauncher({
       actions: launcherActions,
       getStatusSnapshot: () => {

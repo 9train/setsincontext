@@ -44,6 +44,7 @@ test('host.html is the official host page inventory', () => {
     '/src/runtime/host-controller-pipeline.js',
     '/src/runtime/host-draft-map-sync.js',
     '/src/runtime/host-midi-capture.js',
+    '/src/runtime/host-launcher-actions.js',
     '/src/midi.js',
     '/src/board.js',
     '/src/bootstrap-host.js',
@@ -188,6 +189,78 @@ test('host status page module owns only the extracted status chrome', () => {
     '../midi.js',
     '../board.js',
   ], 'src/runtime/host-status-page.js');
+});
+
+test('host launcher actions module owns only extracted launcher action glue', () => {
+  const source = readRepoFile('src/runtime/host-launcher-actions.js');
+  const host = readRepoFile('host.html');
+  const viewer = readRepoFile('viewer.html');
+
+  assert.match(source, /export\s+function\s+createHostLauncherActions\b/);
+  assert.match(source, /export\s+function\s+getCurrentReplayPayload\b/);
+  assert.match(source, /export\s+function\s+downloadReplayPayload\b/);
+  assert.match(source, /export\s+function\s+loadSavedReplay\b/);
+  assertIncludesNone(source, [
+    '../midi.js',
+    '../ws.js',
+    '../board.js',
+    '../diag.js',
+    '../wizard.js',
+    '../editmode.js',
+    '../launcher.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../theme.js',
+    '../session-replay-library.js',
+    '../host-debug.js',
+    '../mapper.js',
+    '../controllers/',
+  ], 'src/runtime/host-launcher-actions.js');
+  assertIncludesNone(source, [
+    'initLauncher',
+    'initBoard',
+    'bootMIDIFromQuery',
+    'connectWS',
+    'boardConsume',
+    'loadMappings',
+    'sendMap',
+    'runtimeApp.setNormalizer',
+    'runtimeApp.setInfoConsumer',
+  ], 'src/runtime/host-launcher-actions.js');
+
+  assert.match(host, /from\s+['"]\/src\/runtime\/host-launcher-actions\.js['"]/);
+  assert.match(host, /import\s+\{\s*initLauncher\s*\}\s+from\s+['"]\/src\/launcher\.js['"]/);
+  assertIncludesAll(host, [
+    '/src/recorder.js',
+    '/src/recorder_ui.js',
+    '/src/session-replay-library.js',
+    '/src/diag.js',
+    '/src/editmode.js',
+    '/src/wizard.js',
+    '/src/theme.js',
+    '/src/presets.js',
+    'createHostLauncherActions({',
+    'getStatusSnapshot',
+    'mountPresetUI',
+    'hostStatus.setLauncher(launcher)',
+    'THEME.attachThemeDesigner',
+    'THEME.ensurePreset',
+  ], 'host.html');
+  assertIncludesNone(host, [
+    'function getCurrentReplayPayload',
+    'function downloadReplayPayload',
+    'function loadSavedReplay',
+    'const launcherActions = {',
+    '/src/runtime/host-page.js',
+  ], 'host.html');
+
+  assertIncludesAll(viewer, [
+    '/src/runtime/viewer-page.js',
+    '/src/bootstrap-viewer.js',
+  ], 'viewer.html');
+  assertIncludesNone(viewer, [
+    '/src/runtime/host-launcher-actions.js',
+  ], 'viewer.html');
 });
 
 test('viewer.html is the official viewer page inventory', () => {
