@@ -40,6 +40,9 @@ test('host.html is the official host page inventory', () => {
   assertIncludesAll(host, [
     '/src/bootstrap-shared.js',
     '/src/runtime/app-bridge.js',
+    '/src/runtime/host-session-page.js',
+    '/src/private-invite-ui.js',
+    '/src/runtime/host-probe.js',
     '/src/runtime/host-status-page.js',
     '/src/runtime/host-controller-pipeline.js',
     '/src/runtime/host-draft-map-sync.js',
@@ -74,6 +77,70 @@ test('host.html is the official host page inventory', () => {
   assert.doesNotMatch(host, /runtimeApp\.setMIDIStatus\(['"]host: off['"]\)/);
   assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
   assertIncludesNone(host, canonicalForbiddenImports, 'host.html');
+});
+
+test('host session page module owns only extracted host session invite and probe page wiring', () => {
+  const source = readRepoFile('src/runtime/host-session-page.js');
+  const host = readRepoFile('host.html');
+  const viewer = readRepoFile('viewer.html');
+
+  assert.match(source, /export\s+function\s+initHostSessionPage\b/);
+  assertIncludesNone(source, [
+    '../midi.js',
+    '../ws.js',
+    '../board.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../diag.js',
+    '../wizard.js',
+    '../editmode.js',
+    '../launcher.js',
+    '../host-debug.js',
+    '../mapper.js',
+    '../controllers/',
+    '../theme.js',
+    '../presets.js',
+    '../private-invite-ui.js',
+    './host-probe.js',
+    '/src/private-invite-ui.js',
+    '/src/runtime/host-probe.js',
+  ], 'src/runtime/host-session-page.js');
+  assertIncludesNone(source, [
+    'bootMIDIFromQuery',
+    'connectWS',
+    'initBoard',
+    'boardConsume',
+    'loadMappings',
+    'sendMap',
+    'runtimeApp.setNormalizer',
+    'runtimeApp.setInfoConsumer',
+    'initLauncher',
+    'createHostLauncherActions',
+    'initHostToolsPage',
+    'initHostThemePage',
+  ], 'src/runtime/host-session-page.js');
+
+  assert.match(host, /import\s+\{\s*initHostSessionPage\s*\}\s+from\s+['"]\/src\/runtime\/host-session-page\.js['"]/);
+  assert.match(host, /import\s+\{\s*installPrivateInvitePanel\s*\}\s+from\s+['"]\/src\/private-invite-ui\.js['"]/);
+  assert.match(host, /import\s+\{\s*installHostProbeOnFirstConnect\s*\}\s+from\s+['"]\/src\/runtime\/host-probe\.js['"]/);
+  assert.match(host, /const\s+hostSessionPage\s*=\s*initHostSessionPage\(\{[\s\S]*runtimeApp,[\s\S]*installHostProbeOnFirstConnect,[\s\S]*installPrivateInvitePanel,[\s\S]*\}\)/);
+  assertIncludesAll(host, [
+    'initHostStatusChrome(',
+    'initHostControllerPipeline(',
+    'initHostDraftMapSync(',
+    'startHostMidiCapture(',
+    'createHostLauncherActions(',
+    'initHostToolsPage(',
+    'initHostThemePage(',
+  ], 'host.html');
+  assertIncludesNone(host, [
+    'installHostProbeOnFirstConnect({ runtimeApp });',
+    'installPrivateInvitePanel();',
+    '/src/runtime/host-page.js',
+  ], 'host.html');
+  assertIncludesNone(viewer, [
+    '/src/runtime/host-session-page.js',
+  ], 'viewer.html');
 });
 
 test('host tools page module owns only extracted host jog and debug tool glue', () => {

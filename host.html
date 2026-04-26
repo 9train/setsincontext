@@ -37,6 +37,7 @@
     import { installHostDebug } from '/src/host-debug.js';
     import { installPrivateInvitePanel } from '/src/private-invite-ui.js';
     import { getRuntimeApp } from '/src/runtime/app-bridge.js';
+    import { initHostSessionPage } from '/src/runtime/host-session-page.js';
     import { installHostProbeOnFirstConnect } from '/src/runtime/host-probe.js';
     import { initHostStatusChrome } from '/src/runtime/host-status-page.js';
     import { initHostControllerPipeline } from '/src/runtime/host-controller-pipeline.js';
@@ -67,8 +68,11 @@
      ****************************************************************/
     initSharedPageBoot({ role: 'host', wsStatusId: '__hostBootStatus' });
     const runtimeApp = getRuntimeApp();
-    installHostProbeOnFirstConnect({ runtimeApp });
-    installPrivateInvitePanel();
+    const hostSessionPage = initHostSessionPage({
+      runtimeApp,
+      installHostProbeOnFirstConnect,
+      installPrivateInvitePanel,
+    });
 
     /****************************************************************
      * Init: board + Theme (Shift+T toggles Theme)
