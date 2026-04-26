@@ -41,6 +41,7 @@ test('host.html is the official host page inventory', () => {
     '/src/bootstrap-shared.js',
     '/src/runtime/app-bridge.js',
     '/src/runtime/host-status-page.js',
+    '/src/runtime/host-controller-pipeline.js',
     '/src/midi.js',
     '/src/board.js',
     '/src/bootstrap-host.js',
@@ -48,8 +49,41 @@ test('host.html is the official host page inventory', () => {
   assert.match(host, /<script\s+type=["']module["']>/);
   assert.match(host, /initSharedPageBoot\(\{\s*role:\s*['"]host['"]/);
   assert.match(host, /await\s+initBoard\(\{\s*hostId:\s*['"]boardHost['"]\s*\}\)/);
+  assert.match(host, /initHostControllerPipeline\(\{[\s\S]*runtimeApp,[\s\S]*boardConsume,[\s\S]*hostStatus,[\s\S]*\}\)/);
+  assert.doesNotMatch(host, /function\s+normalizeInfo\b/);
+  assert.doesNotMatch(host, /runtimeApp\.setNormalizer\(normalizeInfo\)/);
   assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
   assertIncludesNone(host, canonicalForbiddenImports, 'host.html');
+});
+
+test('host controller pipeline module owns only normalized host info glue', () => {
+  const source = readRepoFile('src/runtime/host-controller-pipeline.js');
+  const host = readRepoFile('host.html');
+
+  assert.match(source, /export\s+function\s+initHostControllerPipeline\b/);
+  assert.match(source, /export\s+function\s+normalizeHostInfo\b/);
+  assertIncludesNone(source, [
+    '../midi.js',
+    '../ws.js',
+    '../board.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../diag.js',
+    '../wizard.js',
+    '../editmode.js',
+    '../launcher.js',
+    '../host-debug.js',
+    '../mapper.js',
+  ], 'src/runtime/host-controller-pipeline.js');
+  assert.doesNotMatch(source, /\bbootMIDIFromQuery\b/);
+  assert.doesNotMatch(source, /\bconnectWS\b/);
+  assert.doesNotMatch(source, /\binitBoard\b/);
+  assert.doesNotMatch(source, /\bloadMappings\b/);
+  assert.match(host, /import\s+\{\s*initBoard,\s*consumeInfo\s+as\s+boardConsume,\s*getUnifiedMap\s*\}\s+from\s+['"]\/src\/board\.js['"]/);
+  assert.match(host, /initHostControllerPipeline\(\{[\s\S]*boardConsume,[\s\S]*\}\)/);
+  assert.doesNotMatch(host, /runtimeApp\.setInfoConsumer\(\(info\)\s*=>\s*\{/);
+  assert.doesNotMatch(host, /runtimeApp\.getWSClient\(\)\?\.isAlive\?\.\(\)/);
+  assert.doesNotMatch(host, /runtimeApp\.getWSClient\(\)\.send\(info\)/);
 });
 
 test('host status page module owns only the extracted status chrome', () => {

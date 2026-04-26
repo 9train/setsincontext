@@ -67,14 +67,14 @@ test('host.html delegates status chrome while keeping host boot imports', () => 
 
   assertIncludesAll(host, [
     '/src/runtime/host-status-page.js',
+    '/src/runtime/host-controller-pipeline.js',
     '/src/bootstrap-shared.js',
     '/src/runtime/app-bridge.js',
     '/src/midi.js',
     '/src/board.js',
     '/src/bootstrap-host.js',
     'initHostStatusChrome',
-    'hostStatus.noteControllerDetails',
-    'hostStatus.refresh',
+    'initHostControllerPipeline',
     'hostStatus.setLauncher',
     'hostStatus.getStatusSnapshot',
   ], 'host.html');
