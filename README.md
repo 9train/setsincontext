@@ -16,6 +16,8 @@ When future work needs a default target, use this lane:
 - `host.html` for the host page
 - `viewer.html` for the viewer page
 - Browser WebMIDI through `src/midi.js` and `src/controllers/adapters/web-midi.js`
+- Browser WebSocket handling through `src/ws.js`
+- The canonical server in `server/server.js`
 - The controller layer under `src/controllers/`
 - The `pioneer-ddj-flx6` profile as the default and main demo controller
 
@@ -28,18 +30,19 @@ These files remain in the repo, but they are not the official runtime lane:
 - `public/index.html` and `src/main.js` are retained legacy/demo bootstraps
 - `src/host-midi.js` is an older alternate browser WebMIDI helper
 - `src/wsClient.js` and `src/legacy/wsClient.js` are compatibility WebSocket clients, not the main one
-- `server/midi-bridge.js` and `server/hid.js` are optional older Node-side bridge paths
+- `ws-bridge.js` and `legacy/ws-bridge.js` are deprecated standalone relay experiments
+- `server/midi-bridge.js` and `server/hid.js` are legacy/dev-only Node-side diagnostics, not normal runtime paths
 - `src/app-boot.js` and `src/events.js` are experimental FEEL/editor hooks
 - The learned-map storage path in `src/mapper.js` and `src/wizard.js` is a board-renderer compatibility layer, not the source of truth for controller profiles
 
 ## What The App Does Right Now
 
 - Reads live MIDI from a DDJ-FLX6 in the browser through WebMIDI
+- Resolves live input through the official FLX6 controller profile and normalized event path
 - Draws the controller board in the browser
 - Mirrors host activity to one or more viewer pages through WebSocket rooms
-- Loads the shipped board map and merges it with learned local mappings
-- Replays the current room map to new viewers and falls back to cached/static map data if needed
-- Uses the first working version of the new controller layer for FLX6 input normalization
+- Treats learned, fallback, and remote maps as draft/provisional diagnostic metadata, not official controller truth
+- Renders official controller events on the viewer without learned-map fallback bootstrap
 - Includes host-side tools for recording, diagnostics, mapping, and local debug testing
 
 ## Why This App Exists
@@ -57,14 +60,12 @@ In plain English: the app already works as a visualizer, and it is also being us
 - Browser WebMIDI host flow through `src/midi.js`
 - WebSocket relay with rooms, reconnect logic, presence, and room map sync
 - Board rendering from `assets/board.svg`
-- Static FLX6 map loading from `flx6_map.json`
-- Learned mapping storage in local storage and room sync to the server
-- Room map persistence on the server in `data/room_maps.json`
-- Viewer fallback map bootstrap from cached or static `/learned_map.json`
+- Official FLX6 controller profile with aliases, input mappings, output bindings, and script hooks
+- Learned mapping storage and room sync as provisional draft metadata only
+- Room map persistence on the server in `data/room_maps.json` as draft metadata only
 - Host tools: recorder, diagnostics overlay, mapping wizard, local debug helper, and a few older helper panels still in the repo
 - New controller-layer modules under `src/controllers/`
 - Shared canonical control vocabulary
-- FLX6 controller profile with aliases, input mappings, output bindings, and script hooks
 - Shared raw-to-normalized input pipeline
 - Shared `DeviceAdapter` contract and working `WebMidiAdapter`
 - Canonical-first board rendering behavior
@@ -79,7 +80,7 @@ In plain English: the app already works as a visualizer, and it is also being us
 - A browser that supports WebMIDI for the host page
 - A WebSocket-capable local network/browser setup
 
-The supported host path today is the browser WebMIDI path. The older Node MIDI/HID bridge files are still in the repo, but they are not the main setup described below.
+The supported host path today is the browser WebMIDI path. The older Node MIDI/HID bridge files are legacy developer diagnostics and are not loaded during normal startup unless explicitly enabled.
 
 ### Install And Start
 
@@ -109,11 +110,11 @@ Single-port URLs:
 - Host: `http://localhost:8080/host.html?ws=ws://localhost:8080`
 - Viewer: `http://localhost:8080/viewer.html?ws=ws://localhost:8080`
 
-Helpful optional commands:
+Developer diagnostic commands:
 
 ```bash
-npm run list-midi
-npm run list-hid
+npm run dev:list-midi
+npm run dev:list-hid
 ```
 
 ## How To Use The App Step By Step

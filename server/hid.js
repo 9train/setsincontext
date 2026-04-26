@@ -1,7 +1,8 @@
 // server/hid.js
 // Minimal HID -> "info" events (noteon/noteoff/cc) over EventEmitter.
 // Customize the report parsing to your controller's HID layout. (ESM version)
-// Optional experimental bridge only; not part of the default browser WebMIDI host flow.
+// Legacy/dev-only HID diagnostic bridge; not part of the canonical browser
+// WebMIDI host/viewer runtime.
 
 import { EventEmitter } from 'node:events';
 import HID from 'node-hid';

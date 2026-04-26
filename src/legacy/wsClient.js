@@ -3,7 +3,8 @@
 // This client is not used by the official host/viewer runtime.
 // The canonical WebSocket client for the app is /src/ws.js.
 //
-// This module remains only for compatibility with older/demo paths.
+// Remote maps handled here are provisional compatibility metadata, not
+// official controller truth. This module remains only for older/demo paths.
 
 import { applyRemoteMap } from '/src/map-bootstrap.js';
 import { getRuntimeApp } from '/src/runtime/app-bridge.js';

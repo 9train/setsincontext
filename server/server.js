@@ -1,5 +1,5 @@
 // server/server.js
-// Static web server + WebSocket + optional MIDI→WS bridge (ESM version)
+// Static web server + WebSocket + legacy/dev-only optional MIDI/HID bridges (ESM version)
 // SOP merge: integrates rooms + map sync + presence + room-scoped MIDI relay
 // while keeping original behavior (HTTP server, SINGLE_PORT, origin allow-list,
 // HID/MIDI global broadcast, heartbeat, hello/join/ping).
@@ -22,7 +22,6 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import fsp from 'fs/promises';
-import { create as createHID } from './hid.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createSessionStore } from './session-store.js';
 
@@ -1119,9 +1118,9 @@ if (ENABLE_ROOM_HEARTBEAT) {
 process.on('SIGTERM', () => { clearInterval(hbInterval); server.close(()=>process.exit(0)); });
 process.on('SIGINT',  () => { clearInterval(hbInterval); server.close(()=>process.exit(0)); });
 
-// ---- Optional HID bridge (unchanged)
-const HID_ENABLED = process.env.HID_ENABLED === '1';
-if (HID_ENABLED) {
+// ---- Legacy/dev-only HID diagnostic bridge. Not part of canonical browser WebMIDI runtime.
+if (process.env.HID_ENABLED === '1') {
+  const { create: createHID } = await import('./hid.js');
   const hid = createHID({ enabled: true });
   // Keep original "broadcast to ALL clients" behavior for HID stream
   hid.on('info',  (info) => broadcast(info));
@@ -1129,18 +1128,18 @@ if (HID_ENABLED) {
   hid.on('error', (e)    => console.warn('[HID] error:', e?.message || e));
 }
 
-// ---- Optional: MIDI → WS bridge (Node side) (unchanged)
+// ---- Legacy/dev-only Node MIDI bridge. Canonical runtime uses browser WebMIDI from host.html.
 let midiInput = null;
-try {
-  const mod = await import('easymidi');           // dynamic ESM import of a CommonJS module
-  const easymidi = mod.default ?? mod;            // interop: CJS may appear under .default
+if (MIDI_INPUT) {
+  try {
+    const mod = await import('easymidi');         // dynamic ESM import of a CommonJS module
+    const easymidi = mod.default ?? mod;          // interop: CJS may appear under .default
 
-  const inputs = easymidi.getInputs();
-  const outputs = easymidi.getOutputs();
-  console.log('[MIDI] Inputs:', inputs);
-  console.log('[MIDI] Outputs:', outputs);
+    const inputs = easymidi.getInputs();
+    const outputs = easymidi.getOutputs();
+    console.log('[MIDI] Inputs:', inputs);
+    console.log('[MIDI] Outputs:', outputs);
 
-  if (MIDI_INPUT) {
     if (!inputs.includes(MIDI_INPUT)) {
       console.warn(`[MIDI] Input "${MIDI_INPUT}" not found. Set MIDI_INPUT to one of:`, inputs);
     } else {
@@ -1164,11 +1163,9 @@ try {
       midiInput.on('noteoff', d => send('noteoff', d));
       midiInput.on('cc',      d => send('cc', d));
     }
-  } else {
-    console.log('[MIDI] Node bridge idle. Set MIDI_INPUT="DDJ-FLX6" (or your IAC bus) to enable.');
+  } catch {
+    console.warn('[MIDI] easymidi not available. Skipping Node MIDI bridge. (WebMIDI in the browser will still work.)');
   }
-} catch {
-  console.warn('[MIDI] easymidi not available. Skipping Node MIDI bridge. (WebMIDI in the browser will still work.)');
 }
 
 // (export default is optional, handy for tests/tooling)

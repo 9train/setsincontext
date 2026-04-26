@@ -1,8 +1,8 @@
 // server/midi-bridge.js
 // Mirror any CoreMIDI input (e.g., IAC Bus or mirrored device) into "info" events (ESM version).
 // This lets your visualizer work while Serato owns the controller.
-// Retained as an optional/legacy bridge module; server/server.js does not import it
-// in the canonical host/viewer runtime.
+// Legacy/dev-only Node MIDI diagnostic bridge; not part of the canonical
+// browser WebMIDI host/viewer runtime.
 
 import { EventEmitter } from 'node:events';
 import easymidiCjs from 'easymidi';

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // legacy/ws-bridge.js
-// LEGACY SIMPLE RELAY:
+// DEPRECATED DEV-ONLY SIMPLE RELAY:
 // This standalone bridge is not part of the official host/viewer runtime.
 // The canonical runtime uses server/server.js plus the browser client in /src/ws.js.
 
