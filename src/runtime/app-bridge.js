@@ -1,3 +1,7 @@
+// Explicit runtime bridge for the official host/viewer pages.
+// The window/global aliases below are compatibility and tooling surfaces only.
+// Future cleanup should move tools to runtimeApp methods before removing them.
+
 import { buildDebuggerEventSnapshot } from '../event-log-snapshot.js';
 
 const BRIDGE_KEY = '__FLX_RUNTIME_BRIDGE__';
@@ -388,6 +392,8 @@ function createRuntimeBridge(target) {
   state.bound.setWSStatus = bridge.setWSStatus.bind(bridge);
   state.bound.setMIDIStatus = bridge.setMIDIStatus.bind(bridge);
 
+  // Compatibility/tooling aliases owned by this bridge. Keep these wired until
+  // diagnostics, learn/edit tools, recorder, and tests call runtimeApp directly.
   defineBridgeAlias(target, 'consumeInfo', {
     getValue: () => state.bound.consumeInfo,
     setValue: (fn) => {

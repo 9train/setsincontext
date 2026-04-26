@@ -21,6 +21,7 @@ When future work needs a default target, use this lane:
 - The controller layer under `src/controllers/`
 - The `pioneer-ddj-flx6` profile as the default and main demo controller
 
+The official runtime uses `host.html` / `viewer.html` with `src/ws.js`, `src/midi.js`, and `server/server.js`.
 `index.html` is only a small launcher/redirect into that runtime. It is not a separate app path.
 
 ## Legacy / Experimental Paths
@@ -58,7 +59,7 @@ In plain English: the app already works as a visualizer, and it is also being us
 
 - Official browser entrypoints: `host.html`, `viewer.html`, and `index.html` as a small redirect/launcher
 - Browser WebMIDI host flow through `src/midi.js`
-- WebSocket relay with rooms, reconnect logic, presence, and room map sync
+- WebSocket relay with rooms, reconnect logic, presence, and draft/provisional room map metadata sync
 - Board rendering from `assets/board.svg`
 - Official FLX6 controller profile with aliases, input mappings, output bindings, and script hooks
 - Learned mapping storage and room sync as provisional draft metadata only
@@ -208,7 +209,7 @@ node --test tests/server-room-join.test.js
 7. Move the left and right jog wheels and confirm they render.
 8. Press the left and right play buttons and confirm they render.
 9. Press the left and right cue buttons and confirm they render.
-10. Reload the viewer and confirm it receives the current room map again.
+10. Reload the viewer and confirm official controller events still render after reconnect.
 
 ### Manual Test Without Hardware
 
@@ -351,7 +352,7 @@ It can:
 - Save raw learned mappings to local storage
 - Import and export learned mapping JSON
 - Link multiple raw keys to the same board target across modes
-- Push learned room maps over WebSocket so viewers can stay in sync
+- Push learned room-map metadata over WebSocket for learn/review sync
 
 This path is useful today, but it still works in the older raw mapping style. It maps controller events to board target ids, not to the newer canonical controller vocabulary.
 

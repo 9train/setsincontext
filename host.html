@@ -381,15 +381,16 @@
     });
 
     /****************************************************************
-     * Auto-push learned map to the room (SOP)
+     * Draft map metadata sync for learn/review tools.
+     * This is not official render truth.
      ****************************************************************/
     function pushMap() {
       try {
-        const mapArray = loadMappings() || [];
+        const draftMapArray = loadMappings() || [];
         if (runtimeApp.getWSClient()?.sendMap) {
-          runtimeApp.getWSClient().sendMap(mapArray);
+          runtimeApp.getWSClient().sendMap(draftMapArray);
         } else {
-          runtimeApp.getWSClient()?.send?.({ type: 'map:set', map: mapArray, ts: Date.now() });
+          runtimeApp.getWSClient()?.send?.({ type: 'map:set', map: draftMapArray, ts: Date.now() });
         }
       } catch (e) {
         console.warn('[host] pushMap failed', e);

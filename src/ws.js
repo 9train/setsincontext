@@ -24,6 +24,8 @@
 //   These maps never become official render authority.
 // - Normalizes controller relay events and emits them through the runtime bridge
 //   learn/monitor contract, with legacy globals preserved as aliases
+// - Supports midi_like/info relay frames for compatibility only; the preferred
+//   official event shape is controller_event with normalized controller fields
 // - Adds candidate path probing and reconnection backoff
 // - Adds periodic ping frames and optional idle-kill safety timer
 //

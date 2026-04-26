@@ -1,6 +1,8 @@
 // /src/bootstrap-host.js
 // SOP REVISION: host WS bootstrap for the official controller runtime.
 // - Keeps original host WS init (role/url/room, onInfo, onStatus)
+// - Owns WebSocket boot and relay metadata only; host.html owns page UI,
+//   board setup, and browser WebMIDI startup
 // - Listens for map:sync only as provisional draft room metadata
 // - Does not seed room truth from cached/static learned maps on startup
 

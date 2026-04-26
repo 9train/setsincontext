@@ -2,6 +2,7 @@
 // Viewer WebSocket bootstrap (SOP-compliant full file)
 // - Preserves OG behavior: role/room handling, URL resolution via getWSURL, normalizeInfo piping,
 //   probe-ack installation with retry timer, and wsClient exposure.
+// - Owns WebSocket boot and relay metadata only; viewer.html owns page UI and board setup.
 // - Does not hydrate cached/static learned maps on startup. Any room map sync is
 //   handled as draft/provisional metadata by the WS client, not render truth.
 
