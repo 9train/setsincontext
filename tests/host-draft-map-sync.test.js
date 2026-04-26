@@ -83,35 +83,39 @@ test('host draft map sync module stays scoped away from host boot and controller
   assert.doesNotMatch(source, /\bruntimeApp\.setInfoConsumer\b/);
 });
 
-test('host.html delegates draft map sync while keeping host boot imports', () => {
+test('host-page.js delegates draft map sync while host.html stays thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assertIncludesAll(host, [
-    '/src/runtime/host-draft-map-sync.js',
-    '/src/runtime/host-status-page.js',
-    '/src/runtime/host-controller-pipeline.js',
-    '/src/runtime/host-midi-capture.js',
-    '/src/bootstrap-shared.js',
-    '/src/runtime/app-bridge.js',
-    '/src/midi.js',
-    '/src/board.js',
-    '/src/bootstrap-host.js',
-    '/src/mapper.js',
+  assertIncludesAll(hostPage, [
+    './host-draft-map-sync.js',
+    './host-status-page.js',
+    './host-controller-pipeline.js',
+    './host-midi-capture.js',
+    '../bootstrap-shared.js',
+    './app-bridge.js',
+    '../midi.js',
+    '../board.js',
+    '../mapper.js',
     'initHostDraftMapSync',
     'loadMappings',
-  ], 'host.html');
-  assertIncludesNone(host, [
+  ], 'src/runtime/host-page.js');
+  assertIncludesNone(hostPage, [
     'function pushMap',
     'setTimeout(pushMap, 250)',
     "window.addEventListener('flx:map-updated', pushMap)",
     'runtimeApp.getWSClient()?.sendMap(draftMapArray)',
     "type: 'map:set'",
     'type: "map:set"',
+  ], 'src/runtime/host-page.js');
+  assert.match(hostPage, /bootMIDIFromQuery\b/);
+  assert.match(hostPage, /startHostMidiCapture\(/);
+  assert.match(hostPage, /initHostControllerPipeline\(/);
+  assert.match(hostPage, /initHostStatusChrome\(/);
+  assertIncludesAll(host, [
+    '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
-  assert.match(host, /bootMIDIFromQuery\b/);
-  assert.match(host, /startHostMidiCapture\(/);
-  assert.match(host, /initHostControllerPipeline\(/);
-  assert.match(host, /initHostStatusChrome\(/);
 });
 
 test('pushDraftMapMetadata sends via sendMap when available', () => {

@@ -77,25 +77,26 @@ test('host session page module stays dependency-injected and away from host runt
   ], 'src/runtime/host-session-page.js');
 });
 
-test('host.html delegates host session page wiring while keeping existing host imports and extracted page init calls', () => {
+test('host-page.js delegates host session page wiring while host.html stays thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assertIncludesAll(host, [
-    '/src/runtime/host-session-page.js',
-    '/src/private-invite-ui.js',
-    '/src/runtime/host-probe.js',
-    '/src/runtime/host-status-page.js',
-    '/src/runtime/host-controller-pipeline.js',
-    '/src/runtime/host-draft-map-sync.js',
-    '/src/runtime/host-midi-capture.js',
-    '/src/runtime/host-launcher-actions.js',
-    '/src/runtime/host-tools-page.js',
-    '/src/runtime/host-theme-page.js',
-    '/src/runtime/app-bridge.js',
-    '/src/bootstrap-host.js',
-  ], 'host.html');
-  assert.match(host, /const\s+hostSessionPage\s*=\s*initHostSessionPage\(\{[\s\S]*runtimeApp,[\s\S]*installHostProbeOnFirstConnect,[\s\S]*installPrivateInvitePanel,[\s\S]*\}\)/);
-  assertIncludesAll(host, [
+  assertIncludesAll(hostPage, [
+    './host-session-page.js',
+    '../private-invite-ui.js',
+    './host-probe.js',
+    './host-status-page.js',
+    './host-controller-pipeline.js',
+    './host-draft-map-sync.js',
+    './host-midi-capture.js',
+    './host-launcher-actions.js',
+    './host-tools-page.js',
+    './host-theme-page.js',
+    './app-bridge.js',
+    '../bootstrap-shared.js',
+  ], 'src/runtime/host-page.js');
+  assert.match(hostPage, /const\s+hostSessionPage\s*=\s*deps\.initHostSessionPage\(\{[\s\S]*runtimeApp,[\s\S]*installHostProbeOnFirstConnect:\s*deps\.installHostProbeOnFirstConnect,[\s\S]*installPrivateInvitePanel:\s*deps\.installPrivateInvitePanel,[\s\S]*\}\)/);
+  assertIncludesAll(hostPage, [
     'initHostStatusChrome(',
     'initHostControllerPipeline(',
     'initHostDraftMapSync(',
@@ -103,11 +104,14 @@ test('host.html delegates host session page wiring while keeping existing host i
     'createHostLauncherActions(',
     'initHostToolsPage(',
     'initHostThemePage(',
-  ], 'host.html');
-  assertIncludesNone(host, [
+  ], 'src/runtime/host-page.js');
+  assertIncludesNone(hostPage, [
     'installHostProbeOnFirstConnect({ runtimeApp });',
     'installPrivateInvitePanel();',
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(host, [
     '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
 });
 

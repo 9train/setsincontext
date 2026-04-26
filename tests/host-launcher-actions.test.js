@@ -252,35 +252,39 @@ test('host launcher actions module stays dependency-injected and away from runti
   ], 'src/runtime/host-launcher-actions.js');
 });
 
-test('host.html delegates launcher actions while keeping host-owned launcher imports and setup', () => {
+test('host-page.js delegates launcher actions while host.html stays thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assertIncludesAll(host, [
-    '/src/runtime/host-launcher-actions.js',
-    '/src/launcher.js',
-    '/src/recorder.js',
-    '/src/recorder_ui.js',
-    '/src/session-replay-library.js',
-    '/src/diag.js',
-    '/src/editmode.js',
-    '/src/wizard.js',
-    '/src/theme.js',
-    '/src/presets.js',
+  assertIncludesAll(hostPage, [
+    './host-launcher-actions.js',
+    '../launcher.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../session-replay-library.js',
+    '../diag.js',
+    '../editmode.js',
+    '../wizard.js',
+    '../theme.js',
+    '../presets.js',
     'createHostLauncherActions',
     'initLauncher',
     'hostStatus.setLauncher(launcher)',
     'getStatusSnapshot',
     'mountPresetUI',
-    "const stageEl = document.getElementById('boardHost')",
-  ], 'host.html');
+    'boardHost',
+  ], 'src/runtime/host-page.js');
 
-  assertIncludesNone(host, [
+  assertIncludesNone(hostPage, [
     'function getCurrentReplayPayload',
     'function downloadReplayPayload',
     'function loadSavedReplay',
     'const launcherActions = {',
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(host, [
+    '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
-  assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
 });
 
 test('getCurrentReplayPayload parses FLXRec.exportJSON output', () => {

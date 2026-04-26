@@ -85,34 +85,38 @@ test('host controller pipeline stays scoped away from host boot systems', () => 
   assert.doesNotMatch(source, /\bloadMappings\b/);
 });
 
-test('host.html delegates pipeline glue while keeping host boot imports', () => {
+test('host-page.js delegates pipeline glue while host.html stays thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assertIncludesAll(host, [
-    '/src/runtime/host-controller-pipeline.js',
-    '/src/runtime/host-tools-page.js',
-    '/src/runtime/host-status-page.js',
-    '/src/runtime/host-midi-capture.js',
-    '/src/bootstrap-shared.js',
-    '/src/runtime/app-bridge.js',
-    '/src/midi.js',
-    '/src/board.js',
-    '/src/bootstrap-host.js',
-  ], 'host.html');
-  assertIncludesNone(host, [
+  assertIncludesAll(hostPage, [
+    './host-controller-pipeline.js',
+    './host-tools-page.js',
+    './host-status-page.js',
+    './host-midi-capture.js',
+    '../bootstrap-shared.js',
+    './app-bridge.js',
+    '../midi.js',
+    '../board.js',
+  ], 'src/runtime/host-page.js');
+  assertIncludesNone(hostPage, [
     'function normalizeInfo',
     'runtimeApp.setNormalizer(normalizeInfo)',
     'runtimeApp.setInfoConsumer((info) => {',
     'runtimeApp.getWSClient()?.isAlive?.()',
     'runtimeApp.getWSClient().send(info)',
-  ], 'host.html');
-  assertIncludesAll(host, [
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(hostPage, [
     'startHostMidiCapture',
     'initHostToolsPage',
     'boardConsume',
     'bootMIDIFromQuery',
     'initHostDraftMapSync',
     'loadMappings',
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(host, [
+    '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
 });
 

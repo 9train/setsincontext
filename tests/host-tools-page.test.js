@@ -81,52 +81,55 @@ test('host tools page module stays scoped to injected host-only tooling', () => 
   ], 'src/runtime/host-tools-page.js');
 });
 
-test('host.html delegates host-only tools while keeping host boot ownership', () => {
+test('host-page.js delegates host-only tools while keeping host.html thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assertIncludesAll(host, [
-    '/src/runtime/host-tools-page.js',
-    '/src/jog-runtime.js',
-    '/src/jog-calibration-ui.js',
-    '/src/host-debug.js',
+  assertIncludesAll(hostPage, [
+    './host-tools-page.js',
+    '../jog-runtime.js',
+    '../jog-calibration-ui.js',
+    '../host-debug.js',
     'initHostToolsPage',
     'installJogRuntime',
     'attachJogCalibrationModal',
     'installHostDebug',
-    '/src/runtime/host-status-page.js',
-    '/src/runtime/host-controller-pipeline.js',
-    '/src/runtime/host-draft-map-sync.js',
-    '/src/runtime/host-midi-capture.js',
-    '/src/runtime/host-launcher-actions.js',
-    '/src/midi.js',
-    '/src/board.js',
-    '/src/launcher.js',
-    '/src/recorder.js',
-    '/src/recorder_ui.js',
-    '/src/diag.js',
-    '/src/editmode.js',
-    '/src/wizard.js',
-    '/src/theme.js',
-    '/src/bootstrap-host.js',
-  ], 'host.html');
+    './host-status-page.js',
+    './host-controller-pipeline.js',
+    './host-draft-map-sync.js',
+    './host-midi-capture.js',
+    './host-launcher-actions.js',
+    '../midi.js',
+    '../board.js',
+    '../launcher.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../diag.js',
+    '../editmode.js',
+    '../wizard.js',
+    '../theme.js',
+  ], 'src/runtime/host-page.js');
 
-  assert.match(host, /const\s+hostTools\s*=\s*initHostToolsPage\(\{[\s\S]*runtimeApp,[\s\S]*documentRef:\s*document,[\s\S]*windowRef:\s*window,[\s\S]*boardHost:\s*stageEl,[\s\S]*getUnifiedMap,[\s\S]*installJogRuntime,[\s\S]*attachJogCalibrationModal,[\s\S]*installHostDebug,[\s\S]*hostStatus,[\s\S]*\}\)/);
-  assert.match(host, /await\s+initBoard\(\{\s*hostId:\s*['"]boardHost['"]\s*\}\)/);
-  assert.match(host, /initHostStatusChrome\(\{[\s\S]*runtimeApp,[\s\S]*document,[\s\S]*\}\)/);
-  assert.match(host, /initHostControllerPipeline\(\{[\s\S]*runtimeApp,[\s\S]*boardConsume,[\s\S]*hostStatus,[\s\S]*\}\)/);
-  assert.match(host, /initHostDraftMapSync\(\{[\s\S]*runtimeApp,[\s\S]*loadMappings,[\s\S]*\}\)/);
-  assert.match(host, /startHostMidiCapture\(\{[\s\S]*runtimeApp,[\s\S]*hostStatus,[\s\S]*bootMIDIFromQuery,[\s\S]*\}\)/);
-  assert.match(host, /createHostLauncherActions\(\{[\s\S]*DIAG,[\s\S]*RECUI,[\s\S]*WIZ,[\s\S]*EDIT,[\s\S]*THEME,[\s\S]*FLXRec,[\s\S]*runtimeApp,[\s\S]*\}\)/);
-  assert.match(host, /initLauncher\(\{/);
-  assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
+  assert.match(hostPage, /const\s+hostTools\s*=\s*deps\.initHostToolsPage\(\{[\s\S]*runtimeApp,[\s\S]*documentRef:\s*doc,[\s\S]*windowRef:\s*win,[\s\S]*boardHost:\s*stageEl,[\s\S]*getUnifiedMap:\s*deps\.getUnifiedMap,[\s\S]*installJogRuntime:\s*deps\.installJogRuntime,[\s\S]*attachJogCalibrationModal:\s*deps\.attachJogCalibrationModal,[\s\S]*installHostDebug:\s*deps\.installHostDebug,[\s\S]*hostStatus,[\s\S]*\}\)/);
+  assert.match(hostPage, /await\s+deps\.initBoard\(\{\s*hostId:\s*['"]boardHost['"]\s*\}\)/);
+  assert.match(hostPage, /deps\.initHostStatusChrome\(\{[\s\S]*runtimeApp,[\s\S]*document:\s*doc[\s\S]*\}\)/);
+  assert.match(hostPage, /deps\.initHostControllerPipeline\(\{[\s\S]*runtimeApp,[\s\S]*boardConsume:\s*deps\.boardConsume,[\s\S]*hostStatus,[\s\S]*\}\)/);
+  assert.match(hostPage, /deps\.initHostDraftMapSync\(\{[\s\S]*runtimeApp,[\s\S]*loadMappings:\s*deps\.loadMappings,[\s\S]*\}\)/);
+  assert.match(hostPage, /deps\.startHostMidiCapture\(\{[\s\S]*runtimeApp,[\s\S]*hostStatus,[\s\S]*bootMIDIFromQuery:\s*deps\.bootMIDIFromQuery,[\s\S]*\}\)/);
+  assert.match(hostPage, /deps\.createHostLauncherActions\(\{[\s\S]*DIAG:\s*deps\.DIAG,[\s\S]*RECUI:\s*deps\.RECUI,[\s\S]*WIZ:\s*deps\.WIZ,[\s\S]*EDIT:\s*deps\.EDIT,[\s\S]*THEME:\s*deps\.THEME,[\s\S]*FLXRec:\s*deps\.FLXRec,[\s\S]*runtimeApp,[\s\S]*\}\)/);
+  assert.match(hostPage, /deps\.initLauncher\(\{/);
 
-  assertIncludesNone(host, [
+  assertIncludesNone(hostPage, [
     'const Jog = installJogRuntime({',
     'exposeGlobalControls: true',
     'jogRuntime: Jog',
     "trigger: document.getElementById('openJogCalibration')",
     'consumeInfo: (info) => runtimeApp.consumeInfo(info)',
     'getWSClient: () => runtimeApp.getWSClient()',
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(host, [
+    '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
 });
 

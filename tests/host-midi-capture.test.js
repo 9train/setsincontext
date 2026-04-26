@@ -76,24 +76,24 @@ test('host midi capture module stays scoped to capture callback wiring', () => {
   assert.doesNotMatch(source, /\bsendMap\b/);
 });
 
-test('host.html delegates WebMIDI capture while keeping host boot imports', () => {
+test('host-page.js delegates WebMIDI capture while host.html stays thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assertIncludesAll(host, [
-    '/src/runtime/host-midi-capture.js',
-    '/src/midi.js',
-    '/src/runtime/host-status-page.js',
-    '/src/runtime/host-controller-pipeline.js',
-    '/src/runtime/host-draft-map-sync.js',
-    '/src/bootstrap-shared.js',
-    '/src/runtime/app-bridge.js',
-    '/src/board.js',
-    '/src/bootstrap-host.js',
+  assertIncludesAll(hostPage, [
+    './host-midi-capture.js',
+    '../midi.js',
+    './host-status-page.js',
+    './host-controller-pipeline.js',
+    './host-draft-map-sync.js',
+    '../bootstrap-shared.js',
+    './app-bridge.js',
+    '../board.js',
     'startHostMidiCapture',
     'bootMIDIFromQuery',
-  ], 'host.html');
-  assert.match(host, /startHostMidiCapture\(\{[\s\S]*runtimeApp,[\s\S]*hostStatus,[\s\S]*bootMIDIFromQuery,[\s\S]*\}\)/);
-  assertIncludesNone(host, [
+  ], 'src/runtime/host-page.js');
+  assert.match(hostPage, /deps\.startHostMidiCapture\(\{[\s\S]*runtimeApp,[\s\S]*hostStatus,[\s\S]*bootMIDIFromQuery:\s*deps\.bootMIDIFromQuery,[\s\S]*\}\)/);
+  assertIncludesNone(hostPage, [
     "console.log('[MIDI] starting init via bootMIDIFromQuery')",
     'const handle = await bootMIDIFromQuery({',
     'runtimeApp.consumeNormalizedInfo(info)',
@@ -101,7 +101,10 @@ test('host.html delegates WebMIDI capture while keeping host boot imports', () =
     "console.log('[MIDI] init OK')",
     "console.warn('[MIDI] init failed', e)",
     "runtimeApp.setMIDIStatus('host: off')",
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(host, [
     '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
 });
 

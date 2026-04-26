@@ -62,28 +62,28 @@ test('host status page module stays scoped away from host boot systems', () => {
   assert.doesNotMatch(source, /\binitBoard\b/);
 });
 
-test('host.html delegates status chrome while keeping host boot imports', () => {
+test('host-page.js delegates status chrome while host.html stays thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assertIncludesAll(host, [
-    '/src/runtime/host-status-page.js',
-    '/src/runtime/host-controller-pipeline.js',
-    '/src/bootstrap-shared.js',
-    '/src/runtime/app-bridge.js',
-    '/src/midi.js',
-    '/src/board.js',
-    '/src/bootstrap-host.js',
+  assertIncludesAll(hostPage, [
+    './host-status-page.js',
+    './host-controller-pipeline.js',
+    '../bootstrap-shared.js',
+    './app-bridge.js',
+    '../midi.js',
+    '../board.js',
     'initHostStatusChrome',
     'initHostControllerPipeline',
     'hostStatus.setLauncher',
     'hostStatus.getStatusSnapshot',
-  ], 'host.html');
+  ], 'src/runtime/host-page.js');
 
-  assertIncludesNone(host, [
-    '/src/main.js',
-    '/src/wsClient.js',
-    '/src/legacy/wsClient.js',
-    '/src/host-midi.js',
+  assertIncludesNone(hostPage, [
+    '../main.js',
+    '../wsClient.js',
+    '../legacy/wsClient.js',
+    '../host-midi.js',
     'function ensureStatusButton',
     'function renderStatusButton',
     'function describeActivePopover',
@@ -91,5 +91,9 @@ test('host.html delegates status chrome while keeping host boot imports', () => 
     'function renderStatusChrome',
     'function closeStatusPopover',
     'function toggleStatusPopover',
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(host, [
+    '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
 });

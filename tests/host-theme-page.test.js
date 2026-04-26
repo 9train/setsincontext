@@ -134,17 +134,18 @@ test('host theme page module stays dependency-injected and scoped away from runt
   ], 'src/runtime/host-theme-page.js');
 });
 
-test('host.html delegates host theme page wiring while keeping host boot ownership', () => {
+test('host-page.js delegates host theme page wiring while keeping host.html thin', () => {
+  const hostPage = readRepoFile('src/runtime/host-page.js');
   const host = readRepoFile('host.html');
 
-  assert.match(host, /import\s+\{\s*initHostThemePage\s*\}\s+from\s+['"]\/src\/runtime\/host-theme-page\.js['"]/);
-  assert.match(host, /const\s+hostThemePage\s*=\s*initHostThemePage\(\{[\s\S]*THEME,[\s\S]*documentRef:\s*document,[\s\S]*windowRef:\s*window,[\s\S]*getLauncher:\s*\(\)\s*=>\s*launcher,[\s\S]*\}\)/);
-  assertIncludesAll(host, [
-    '/src/theme.js',
-    '/src/presets.js',
-    '/src/launcher.js',
+  assert.match(hostPage, /import\s+\{\s*initHostThemePage\s*\}\s+from\s+['"]\.\/host-theme-page\.js['"]/);
+  assert.match(hostPage, /const\s+hostThemePage\s*=\s*deps\.initHostThemePage\(\{[\s\S]*THEME:\s*deps\.THEME,[\s\S]*documentRef:\s*doc,[\s\S]*windowRef:\s*win,[\s\S]*getLauncher:\s*\(\)\s*=>\s*launcher,[\s\S]*\}\)/);
+  assertIncludesAll(hostPage, [
+    '../theme.js',
+    '../presets.js',
+    '../launcher.js',
     'initLauncher({',
-    'PRESETS.attachPresetUI(',
+    'deps.PRESETS.attachPresetUI(',
     'hostStatus.setLauncher(launcher)',
     'initHostStatusChrome(',
     'initHostControllerPipeline(',
@@ -152,14 +153,17 @@ test('host.html delegates host theme page wiring while keeping host boot ownersh
     'startHostMidiCapture(',
     'createHostLauncherActions(',
     'initHostToolsPage(',
-    '/src/bootstrap-host.js',
-  ], 'host.html');
-  assert.match(host, /const\s+stageEl\s*=\s*document\.getElementById\('boardHost'\)/);
-  assertIncludesNone(host, [
+  ], 'src/runtime/host-page.js');
+  assert.match(hostPage, /const\s+stageEl\s*=\s*doc\?\.(?:getElementById\?\.)?\('boardHost'\)/);
+  assertIncludesNone(hostPage, [
     'THEME.attachThemeDesigner({',
     "THEME.ensurePreset?.('instrument-dark')",
     "document.addEventListener('keydown', (e)=>",
     "launcher?.toggleSection('theme')",
+  ], 'src/runtime/host-page.js');
+  assertIncludesAll(host, [
+    '/src/runtime/host-page.js',
+    '/src/bootstrap-host.js',
   ], 'host.html');
 });
 
