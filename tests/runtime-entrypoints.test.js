@@ -45,6 +45,7 @@ test('host.html is the official host page inventory', () => {
     '/src/runtime/host-draft-map-sync.js',
     '/src/runtime/host-midi-capture.js',
     '/src/runtime/host-launcher-actions.js',
+    '/src/runtime/host-tools-page.js',
     '/src/midi.js',
     '/src/board.js',
     '/src/bootstrap-host.js',
@@ -55,6 +56,7 @@ test('host.html is the official host page inventory', () => {
   assert.match(host, /initHostControllerPipeline\(\{[\s\S]*runtimeApp,[\s\S]*boardConsume,[\s\S]*hostStatus,[\s\S]*\}\)/);
   assert.match(host, /initHostDraftMapSync\(\{[\s\S]*runtimeApp,[\s\S]*loadMappings,[\s\S]*\}\)/);
   assert.match(host, /startHostMidiCapture\(\{[\s\S]*runtimeApp,[\s\S]*hostStatus,[\s\S]*bootMIDIFromQuery,[\s\S]*\}\)/);
+  assert.match(host, /initHostToolsPage\(\{[\s\S]*runtimeApp,[\s\S]*installJogRuntime,[\s\S]*installHostDebug,[\s\S]*\}\)/);
   assert.doesNotMatch(host, /function\s+normalizeInfo\b/);
   assert.doesNotMatch(host, /runtimeApp\.setNormalizer\(normalizeInfo\)/);
   assert.doesNotMatch(host, /function\s+pushMap\b/);
@@ -71,6 +73,54 @@ test('host.html is the official host page inventory', () => {
   assert.doesNotMatch(host, /runtimeApp\.setMIDIStatus\(['"]host: off['"]\)/);
   assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
   assertIncludesNone(host, canonicalForbiddenImports, 'host.html');
+});
+
+test('host tools page module owns only extracted host jog and debug tool glue', () => {
+  const source = readRepoFile('src/runtime/host-tools-page.js');
+  const host = readRepoFile('host.html');
+  const viewer = readRepoFile('viewer.html');
+
+  assert.match(source, /export\s+function\s+initHostToolsPage\b/);
+  assertIncludesNone(source, [
+    '../midi.js',
+    '../ws.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../diag.js',
+    '../wizard.js',
+    '../editmode.js',
+    '../launcher.js',
+    '../mapper.js',
+    '../controllers/',
+  ], 'src/runtime/host-tools-page.js');
+  assertIncludesNone(source, [
+    'bootMIDIFromQuery',
+    'connectWS',
+    'initBoard',
+    'boardConsume',
+    'loadMappings',
+    'sendMap',
+    'runtimeApp.setNormalizer',
+    'runtimeApp.setInfoConsumer',
+    'initLauncher',
+  ], 'src/runtime/host-tools-page.js');
+
+  assert.match(host, /import\s+\{\s*initHostToolsPage\s*\}\s+from\s+['"]\/src\/runtime\/host-tools-page\.js['"]/);
+  assert.match(host, /import\s+\{\s*installJogRuntime\s*\}\s+from\s+['"]\/src\/jog-runtime\.js['"]/);
+  assert.match(host, /import\s+\{\s*installHostDebug\s*\}\s+from\s+['"]\/src\/host-debug\.js['"]/);
+  assert.match(host, /const\s+hostTools\s*=\s*initHostToolsPage\(\{[\s\S]*runtimeApp,[\s\S]*documentRef:\s*document,[\s\S]*windowRef:\s*window,[\s\S]*boardHost:\s*stageEl,[\s\S]*getUnifiedMap,[\s\S]*installJogRuntime,[\s\S]*installHostDebug,[\s\S]*hostStatus,[\s\S]*\}\)/);
+  assertIncludesNone(host, [
+    'const Jog = installJogRuntime({',
+    'exposeGlobalControls: true',
+    'jogRuntime: Jog',
+    "trigger: document.getElementById('openJogCalibration')",
+    'consumeInfo: (info) => runtimeApp.consumeInfo(info)',
+    'getWSClient: () => runtimeApp.getWSClient()',
+    '/src/runtime/host-page.js',
+  ], 'host.html');
+  assertIncludesNone(viewer, [
+    '/src/runtime/host-tools-page.js',
+  ], 'viewer.html');
 });
 
 test('host MIDI capture module owns only host WebMIDI callback/status wiring', () => {

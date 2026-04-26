@@ -90,6 +90,7 @@ test('host.html delegates pipeline glue while keeping host boot imports', () => 
 
   assertIncludesAll(host, [
     '/src/runtime/host-controller-pipeline.js',
+    '/src/runtime/host-tools-page.js',
     '/src/runtime/host-status-page.js',
     '/src/runtime/host-midi-capture.js',
     '/src/bootstrap-shared.js',
@@ -107,7 +108,7 @@ test('host.html delegates pipeline glue while keeping host boot imports', () => 
   ], 'host.html');
   assertIncludesAll(host, [
     'startHostMidiCapture',
-    'runtimeApp.consumeInfo(info)',
+    'initHostToolsPage',
     'boardConsume',
     'bootMIDIFromQuery',
     'initHostDraftMapSync',

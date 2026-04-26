@@ -45,6 +45,7 @@
     import {
       createHostLauncherActions,
     } from '/src/runtime/host-launcher-actions.js';
+    import { initHostToolsPage } from '/src/runtime/host-tools-page.js';
     import * as THEME      from '/src/theme.js';
     import { bootMIDIFromQuery } from '/src/midi.js';
     import { recorder as FLXRec } from '/src/recorder.js';
@@ -144,25 +145,18 @@
     THEME.ensurePreset?.('instrument-dark');
 
     /****************************************************************
-     * Jog Physics (“Tape Mode”) via shared runtime
-     * (will see normalized events because of wrapper above)
+     * Host-only jog calibration/debug tooling
      ****************************************************************/
-    const Jog = installJogRuntime({
-      getUnifiedMap: () => getUnifiedMap?.() || [],
-      exposeGlobalControls: true,
-    });
-    attachJogCalibrationModal({
-      jogRuntime: Jog,
-      trigger: document.getElementById('openJogCalibration'),
-    });
-
-    /****************************************************************
-     * Local-only debug helper for no-hardware host -> WS -> viewer tests
-     ****************************************************************/
-    installHostDebug({
-      getUnifiedMap: () => getUnifiedMap?.() || [],
-      consumeInfo: (info) => runtimeApp.consumeInfo(info),
-      getWSClient: () => runtimeApp.getWSClient(),
+    const hostTools = initHostToolsPage({
+      runtimeApp,
+      documentRef: document,
+      windowRef: window,
+      boardHost: stageEl,
+      getUnifiedMap,
+      installJogRuntime,
+      attachJogCalibrationModal,
+      installHostDebug,
+      hostStatus,
     });
 
     /****************************************************************
