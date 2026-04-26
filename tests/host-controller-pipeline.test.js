@@ -91,6 +91,7 @@ test('host.html delegates pipeline glue while keeping host boot imports', () => 
   assertIncludesAll(host, [
     '/src/runtime/host-controller-pipeline.js',
     '/src/runtime/host-status-page.js',
+    '/src/runtime/host-midi-capture.js',
     '/src/bootstrap-shared.js',
     '/src/runtime/app-bridge.js',
     '/src/midi.js',
@@ -105,7 +106,7 @@ test('host.html delegates pipeline glue while keeping host boot imports', () => 
     'runtimeApp.getWSClient().send(info)',
   ], 'host.html');
   assertIncludesAll(host, [
-    'runtimeApp.consumeNormalizedInfo(info)',
+    'startHostMidiCapture',
     'runtimeApp.consumeInfo(info)',
     'boardConsume',
     'bootMIDIFromQuery',

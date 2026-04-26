@@ -90,6 +90,7 @@ test('host.html delegates draft map sync while keeping host boot imports', () =>
     '/src/runtime/host-draft-map-sync.js',
     '/src/runtime/host-status-page.js',
     '/src/runtime/host-controller-pipeline.js',
+    '/src/runtime/host-midi-capture.js',
     '/src/bootstrap-shared.js',
     '/src/runtime/app-bridge.js',
     '/src/midi.js',
@@ -108,7 +109,7 @@ test('host.html delegates draft map sync while keeping host boot imports', () =>
     'type: "map:set"',
   ], 'host.html');
   assert.match(host, /bootMIDIFromQuery\b/);
-  assert.match(host, /runtimeApp\.consumeNormalizedInfo\(info\)/);
+  assert.match(host, /startHostMidiCapture\(/);
   assert.match(host, /initHostControllerPipeline\(/);
   assert.match(host, /initHostStatusChrome\(/);
 });
