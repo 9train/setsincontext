@@ -3,7 +3,7 @@
 // without a physical controller attached. It now emits normalized controller
 // events first, with legacy MIDI-like fields preserved for compatibility.
 
-import { applyRemoteMap, loadFallbackMap } from './map-bootstrap.js';
+import { acceptDraftMapCandidate, loadDraftMapCandidate } from './map-bootstrap.js';
 import { lookupCanonicalAlias } from './controllers/core/aliases.js';
 import { createRawInputEvent, normalizeRawInputEvent } from './controllers/core/normalization.js';
 import { getDefaultControllerProfile } from './controllers/profiles/index.js';
@@ -191,8 +191,8 @@ export async function pulseMappedControl({
   mapEntries = [],
   consumeInfo,
   getWSClient = () => undefined,
-  loadFallback = loadFallbackMap,
-  applyMap = applyRemoteMap,
+  loadFallback = loadDraftMapCandidate,
+  applyMap = acceptDraftMapCandidate,
   logger = console,
   stepDelayMs = 180,
   mapSyncDelayMs = 200,
@@ -286,8 +286,8 @@ export function installHostDebug({
   locationLike = typeof window !== 'undefined' ? window.location : undefined,
   stepDelayMs = 180,
   mapSyncDelayMs = 200,
-  loadFallback = loadFallbackMap,
-  applyMap = applyRemoteMap,
+  loadFallback = loadDraftMapCandidate,
+  applyMap = acceptDraftMapCandidate,
 } = {}) {
   if (!isLocalDebugRuntime(locationLike)) return null;
 

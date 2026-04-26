@@ -56,6 +56,9 @@ export function normalizeMapEntries(entries, fallbackOwnership = FALLBACK_RENDER
   }));
 }
 
+// Merge only diagnostic compatibility data. The result is useful for
+// inspection, learn review, and explicit debug compatibility mode; normal board
+// rendering still resolves from official controller render payloads first.
 export function mergeMaps(fileMap, local, options = {}) {
   const baseOwnership = normalizeCompatibilityOwnership(options.baseOwnership, FALLBACK_RENDER_OWNERSHIP);
   const overlayOwnership = normalizeCompatibilityOwnership(options.overlayOwnership, DRAFT_RENDER_OWNERSHIP);
@@ -129,12 +132,16 @@ export function remergeLocalMappings() {
   }));
 }
 
-export function applyRemoteMap(remoteMap) {
+export function applyDraftCompatibilityMap(remoteMap) {
   const overlayOwnership = inferMapOwnership(remoteMap, DRAFT_RENDER_OWNERSHIP);
   return setUnifiedMap(mergeMaps(getFileMapCache(), remoteMap, {
     baseOwnership: FALLBACK_RENDER_OWNERSHIP,
     overlayOwnership,
   }));
+}
+
+export function applyRemoteMap(remoteMap) {
+  return applyDraftCompatibilityMap(remoteMap);
 }
 
 export function remergeLearned() {

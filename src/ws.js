@@ -18,9 +18,10 @@
 //   fields during the transition.
 // - Relay payloads are transport-safe on purpose; local-only branches such as
 //   profile/controllerState/raw/debug snapshots are not serialized over WS.
-// - Viewers dispatch 'flx:remote-map' on map updates
+// - Viewers retain map sync frames as draft/provisional metadata
 //   * Back-compat: legacy {type:'map_sync', payload:[...]} (old relays)
 //   * New server:  {type:'map:sync', map:[...]}
+//   These maps never become official render authority.
 // - Normalizes controller relay events and emits them through the runtime bridge
 //   learn/monitor contract, with legacy globals preserved as aliases
 // - Adds candidate path probing and reconnection backoff
@@ -31,7 +32,7 @@
 // - Older relays may still wrap frames as: { type:'info', payload: <whatever host sent> }
 // - WS protocol ping/pong is handled at protocol level; not visible to JS
 
-import { applyRemoteMap } from './map-bootstrap.js';
+import { acceptDraftMapCandidate } from './map-bootstrap.js';
 import { hasUsableMappings } from './mapper.js';
 import { getRuntimeApp } from './runtime/app-bridge.js';
 
@@ -136,15 +137,22 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
       return false;
     },
 
-    // Host-only: send a full mapping array
-    // Uses {type:'map:set', map:[...]} for new server.
+    // Host-only: send a full draft/review mapping array.
+    // Uses {type:'map:set', map:[...]} for new server compatibility; the
+    // metadata marks the payload as provisional and not controller truth.
     sendMap: (arr)=>{
       if (role !== 'host') return false;
       const mapArr = Array.isArray(arr) ? arr : [];
       if (!hasUsableMappings(mapArr)) return false;
       try {
         if (client.socket?.readyState === WebSocket.OPEN) {
-          client.socket.send(JSON.stringify({ type:'map:set', map: mapArr }));
+          client.socket.send(JSON.stringify({
+            type:'map:set',
+            map: mapArr,
+            mapAuthority: 'draft',
+            mapState: 'provisional',
+            controllerTruth: false,
+          }));
           return true;
         }
       } catch(e){}
@@ -270,25 +278,38 @@ export function connectWS(urlOrOpts = 'ws://localhost:8787', onInfoPos = () => {
         try { runtimeApp?.emitMonitorInput(norm); } catch {}
       }
 
-      // --- Map handling (viewer) — accept BOTH shapes, then applyRemoteMap() ---
-      if (role === 'viewer') {
-        // New server shape: { type:'map:sync', map:[...] }
-        if (parsed?.type === 'map:sync' && Array.isArray(parsed.map)) {
-          if (applyRemoteMap(parsed.map)) {
-            try { console.log('[map] applied', parsed.map.length, 'entries'); } catch {}
-          }
-        }
-        // Legacy relay shape: { type:'map_sync', payload:[...] }
-        else if (parsed?.type === 'map_sync' && Array.isArray(parsed.payload)) {
-          if (applyRemoteMap(parsed.payload)) {
-            try { console.log('[map] applied', parsed.payload.length, 'entries'); } catch {}
-          }
-        }
-      }
+      handleDraftMapSync(parsed);
 
       // Surface everything to optional generic handler (fires after onInfo pipeline)
       try { onMessage && onMessage(parsed); } catch {}
     });
+
+    function handleDraftMapSync(parsed) {
+      if (role === 'viewer') {
+        // New server shape: { type:'map:sync', map:[...] }
+        if (parsed?.type === 'map:sync' && Array.isArray(parsed.map)) {
+          if (acceptDraftMapCandidate(parsed.map, {
+            source: 'server-room-draft-map',
+            state: parsed.mapState || 'provisional',
+            key: parsed.key || null,
+            room: parsed.room || room,
+          })) {
+            try { console.log('[map] retained draft candidate', parsed.map.length, 'entries'); } catch {}
+          }
+        }
+        // Legacy relay shape: { type:'map_sync', payload:[...] }
+        else if (parsed?.type === 'map_sync' && Array.isArray(parsed.payload)) {
+          if (acceptDraftMapCandidate(parsed.payload, {
+            source: 'legacy-map-sync-draft',
+            state: 'provisional',
+            key: parsed.key || null,
+            room: parsed.room || room,
+          })) {
+            try { console.log('[map] retained legacy draft candidate', parsed.payload.length, 'entries'); } catch {}
+          }
+        }
+      }
+    }
 
     ws.addEventListener('close', (event)=>{
       clearPing();

@@ -1,7 +1,7 @@
 // src/mapper.js
-// Local board-target override storage shared by Wizard + board.js.
-// This is a compatibility layer for the current FLX6 board renderer, not the
-// source of truth for the official controller profile under src/controllers/.
+// Local board-target draft storage shared by Wizard + diagnostics.
+// This is a compatibility/review layer, not runtime truth for the official
+// controller profile under src/controllers/.
 // Format for each entry:
 //   { key: "cc:ch:code", type: "cc|noteon|noteoff|pitch", ch: 1-16, code: int, target: "svgId", name?: string }
 

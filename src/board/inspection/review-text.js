@@ -22,14 +22,14 @@ export function describeCompatibilitySource(entry, learnDraft) {
   }
   if (entry && entry.ownership === DRAFT_RENDER_OWNERSHIP) {
     return Object.freeze({
-      source: 'board-draft-map',
-      detail: 'Stored in the local board compatibility map as provisional draft data.',
+      source: 'draft-candidate',
+      detail: 'Stored in the local board compatibility map as diagnostic-only draft data.',
     });
   }
   if (entry && entry.ownership === FALLBACK_RENDER_OWNERSHIP) {
     return Object.freeze({
-      source: 'legacy-fallback-map',
-      detail: 'Loaded from fallback compatibility data and not treated as shipped FLX6 truth.',
+      source: 'fallback-candidate',
+      detail: 'Loaded from fallback compatibility data as diagnostic-only metadata, not shipped FLX6 truth.',
     });
   }
   return Object.freeze({
@@ -71,10 +71,10 @@ export function describeCompatibilityWhyExists(entry, learnDraft) {
     return `Captured during learn review while ${learnDraft.learn.existingMappingId} remained the shipped profile mapping.`;
   }
   if (entry && entry.ownership === DRAFT_RENDER_OWNERSHIP) {
-    return 'Saved as a draft/learned compatibility mapping and kept separate from the official FLX6 profile.';
+    return 'Saved as a diagnostic-only draft candidate and kept separate from the official FLX6 profile.';
   }
   if (entry && entry.ownership === FALLBACK_RENDER_OWNERSHIP) {
-    return 'Kept only for compatibility rendering and should not read as official FLX6 ownership.';
+    return 'Kept only as a fallback candidate for diagnostics/import review and should not read as official FLX6 ownership.';
   }
   return 'Compatibility entry is present without official promotion metadata.';
 }
@@ -94,10 +94,10 @@ export function describeCompatibilityAuthorityNote(entry, officialSource, review
   }
 
   if (entry && entry.ownership === DRAFT_RENDER_OWNERSHIP) {
-    return 'This draft entry can explain current compatibility behavior, but it still needs review before any official promotion.';
+    return 'This draft candidate is diagnostic-only metadata; it still needs review before any official promotion.';
   }
   if (entry && entry.ownership === FALLBACK_RENDER_OWNERSHIP) {
-    return 'This fallback entry is compatibility-only and should not be treated as promoted truth.';
+    return 'This fallback candidate is diagnostic-only compatibility metadata and should not be treated as promoted truth.';
   }
   return 'No authoritative source is attached to this compatibility entry yet.';
 }

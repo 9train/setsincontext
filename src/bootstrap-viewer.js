@@ -2,8 +2,8 @@
 // Viewer WebSocket bootstrap (SOP-compliant full file)
 // - Preserves OG behavior: role/room handling, URL resolution via getWSURL, normalizeInfo piping,
 //   probe-ack installation with retry timer, and wsClient exposure.
-// - Installs the canonical fallback map bootstrap so viewers still hydrate from
-//   cached/static map state before or without a successful WS sync.
+// - Does not hydrate cached/static learned maps on startup. Any room map sync is
+//   handled as draft/provisional metadata by the WS client, not render truth.
 
 import { connectWS } from './ws.js';
 import {
@@ -12,10 +12,7 @@ import {
   getBootSessionMetadata,
   resolveBootWSURL,
 } from './bootstrap-shared.js';
-import { FALLBACK_BOOT_DELAY_MS, installFallbackMapBootstrap } from './map-bootstrap.js';
 import { getRuntimeApp } from './runtime/app-bridge.js';
-
-const VIEWER_REMOTE_SYNC_GRACE_MS = 250;
 
 (() => {
   const WS_ROLE = 'viewer'; // OG: viewer role preserved
@@ -25,9 +22,6 @@ const VIEWER_REMOTE_SYNC_GRACE_MS = 250;
   const { accessToken } = getBootAccessTokens();
   const runtimeApp = getRuntimeApp();
   runtimeApp?.setRelayRuntime?.({ role: WS_ROLE, room, url: wsURL });
-
-  // Give room sync a brief chance to land before fallback applies cached/static map state.
-  installFallbackMapBootstrap({ delayMs: FALLBACK_BOOT_DELAY_MS + VIEWER_REMOTE_SYNC_GRACE_MS });
 
   // Connect WS with role + room (OG behavior)
   const wsClient = connectWS({

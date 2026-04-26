@@ -527,7 +527,13 @@ test('host sendMap ignores empty learned maps but still syncs non-empty maps', a
     ]);
     assert.deepEqual(
       frames.filter((frame) => frame.type === 'map:set'),
-      [{ type: 'map:set', map: learnedMap }],
+      [{
+        type: 'map:set',
+        map: learnedMap,
+        mapAuthority: 'draft',
+        mapState: 'provisional',
+        controllerTruth: false,
+      }],
     );
     const relayFrame = frames.find((frame) => frame.type === 'controller_event');
     assert.equal(relayFrame.event.render.targetId, 'play_L');

@@ -23,7 +23,7 @@ import {
   resolveRenderTargetId,
 } from './profile.js';
 import {
-  applyRemoteMap,
+  applyDraftCompatibilityMap,
   infoKey,
   loadInitialUnifiedMap,
   remergeLocalMappings,
@@ -582,6 +582,13 @@ function rotateKnob(targetId, value = 127) {
   return info;
 }
 
+function getDraftMapCandidateFromEvent(ev) {
+  const detail = ev && ev.detail;
+  if (Array.isArray(detail)) return detail;
+  if (detail && Array.isArray(detail.map)) return detail.map;
+  return [];
+}
+
 export function installBoardWindowBindings() {
   if (typeof window === 'undefined') return;
 
@@ -592,18 +599,20 @@ export function installBoardWindowBindings() {
   window.FLXTest.listSliderBounds = listSliderBounds;
   window.FLXTest.rotateKnob = rotateKnob;
 
-  if (!window.__FLX_REMOTE_MAP_BIND__) {
-    window.__FLX_REMOTE_MAP_BIND__ = true;
-    window.addEventListener('flx:remote-map', (ev) => {
+  if (!window.__FLX_DRAFT_MAP_CANDIDATE_BIND__) {
+    window.__FLX_DRAFT_MAP_CANDIDATE_BIND__ = true;
+    const onDraftMapCandidate = (ev) => {
       try {
-        const remote = Array.isArray(ev.detail) ? ev.detail : [];
-        const merged = applyRemoteMap(remote);
+        const remote = getDraftMapCandidateFromEvent(ev);
+        const merged = applyDraftCompatibilityMap(remote);
         // eslint-disable-next-line no-console
-        console.log('[Board] Applied remote map:', merged.length);
+        console.log('[Board] Registered draft map candidate:', merged.length);
       } catch (e) {
-        console.warn('[Board] remote map failed:', e);
+        console.warn('[Board] draft map candidate failed:', e);
       }
-    });
+    };
+    window.addEventListener('flx:draft-map-candidate', onDraftMapCandidate);
+    window.addEventListener('flx:remote-map', onDraftMapCandidate);
   }
 
   if (!window.__FLX_REMERGE_BIND__) {

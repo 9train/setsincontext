@@ -70,7 +70,7 @@ function createFakeWebSocketHarness() {
   return { FakeWebSocket, sockets };
 }
 
-test('host bootstrap uses map:ensure fallback when the local learned map is empty', async () => {
+test('host bootstrap does not seed room truth from static fallback maps', async () => {
   const fallbackMap = [{ key: 'cc:1:77', target: 'jog_L' }];
   const fetchCalls = [];
   const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
@@ -102,16 +102,8 @@ test('host bootstrap uses map:ensure fallback when the local learned map is empt
       { type: 'map:get' },
     ]);
     assert.equal(frames.some((frame) => frame.type === 'map:set'), false);
-    assert.equal(fetchCalls.length, 1);
-    assert.deepEqual(fetchCalls, ['/learned_map.json']);
-    assert.equal(frames.some((frame) => frame.type === 'map:ensure'), true);
-
-    const ensureFrame = frames.find((frame) => frame.type === 'map:ensure');
-    assert.deepEqual(ensureFrame.map, [
-      { key: 'cc:1:77', target: 'jog_L', ownership: 'fallback' },
-    ]);
-    assert.equal(typeof ensureFrame.key, 'string');
-    assert.equal(ensureFrame.key.length > 0, true);
+    assert.equal(frames.some((frame) => frame.type === 'map:ensure'), false);
+    assert.deepEqual(fetchCalls, []);
   } finally {
     env.restore();
   }
@@ -147,7 +139,7 @@ test('host bootstrap does not send empty learned maps or erase official renderin
       { type: 'join', role: 'host', room: 'empty' },
       { type: 'map:get' },
     ]);
-    assert.deepEqual(fetchCalls, ['/learned_map.json']);
+    assert.deepEqual(fetchCalls, []);
     assert.equal(frames.some((frame) => frame.type === 'map:ensure'), false);
     assert.equal(frames.some((frame) => frame.type === 'map:set'), false);
 

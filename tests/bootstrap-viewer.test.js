@@ -153,7 +153,7 @@ function createBoardFixture(ids = []) {
   return { root, elements };
 }
 
-test('viewer bootstrap lets a remote map win before fallback can apply', async () => {
+test('viewer bootstrap retains remote map sync as draft metadata without fallback bootstrap', async () => {
   const fallbackMap = [{ key: 'cc:1:10', target: 'jog_L' }];
   const remoteMap = [{ key: 'cc:1:11', target: 'jog_R' }];
   const fetchCalls = [];
@@ -180,11 +180,14 @@ test('viewer bootstrap lets a remote map win before fallback can apply', async (
 
     const expectedRemoteMap = [{ key: 'cc:1:11', target: 'jog_R', ownership: 'draft' }];
     assert.deepEqual(env.window.__currentMap, expectedRemoteMap);
+    assert.equal(env.window.__currentMapRuntimeAuthority, false);
+    assert.equal(env.window.__currentMapMetadata.controllerTruth, false);
     assert.equal(env.localStorage.getItem('learned_map'), JSON.stringify(expectedRemoteMap));
     assert.equal(fetchCalls.length, 0);
     assert.equal(env.dispatchedEvents.length, 1);
-    assert.equal(env.dispatchedEvents[0].type, 'flx:remote-map');
-    assert.deepEqual(env.dispatchedEvents[0].detail, expectedRemoteMap);
+    assert.equal(env.dispatchedEvents[0].type, 'flx:draft-map-candidate');
+    assert.deepEqual(env.dispatchedEvents[0].detail.map, expectedRemoteMap);
+    assert.equal(env.dispatchedEvents[0].detail.metadata.controllerTruth, false);
   } finally {
     env.restore();
   }
@@ -259,9 +262,8 @@ test('viewer bootstrap renders official controller_event frames without fallback
   }
 });
 
-test('viewer bootstrap applies fallback map when no remote map arrives', async () => {
+test('viewer bootstrap does not load fallback maps when no remote map arrives', async () => {
   const fallbackMap = [{ key: 'cc:1:77', target: 'jog_L' }];
-  const expectedFallbackMap = [{ key: 'cc:1:77', target: 'jog_L', ownership: 'fallback' }];
   const fetchCalls = [];
   const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
   const env = installMockBrowser({
@@ -280,18 +282,16 @@ test('viewer bootstrap applies fallback map when no remote map arrives', async (
     sockets[0].open();
     await env.advanceTimersBy(1500);
 
-    assert.deepEqual(env.window.__currentMap, expectedFallbackMap);
-    assert.equal(env.localStorage.getItem('learned_map'), JSON.stringify(expectedFallbackMap));
-    assert.deepEqual(fetchCalls, ['/learned_map.json']);
-    assert.equal(env.dispatchedEvents.length, 1);
-    assert.equal(env.dispatchedEvents[0].type, 'flx:remote-map');
-    assert.deepEqual(env.dispatchedEvents[0].detail, expectedFallbackMap);
+    assert.equal(env.window.__currentMap, undefined);
+    assert.equal(env.localStorage.getItem('learned_map'), null);
+    assert.deepEqual(fetchCalls, []);
+    assert.equal(env.dispatchedEvents.length, 0);
   } finally {
     env.restore();
   }
 });
 
-test('viewer bootstrap keeps fallback-mapped unknown raw MIDI diagnostic-only', async () => {
+test('viewer bootstrap keeps received fallback candidates diagnostic-only for unknown raw MIDI', async () => {
   const seen = [];
   const fallbackMap = [{
     key: 'noteon:1:77',
@@ -322,7 +322,16 @@ test('viewer bootstrap keeps fallback-mapped unknown raw MIDI diagnostic-only', 
 
     const ws = sockets[0];
     ws.open();
-    await env.advanceTimersBy(1500);
+    await env.advanceTimersBy(1200);
+    ws.emitMessage({
+      type: 'map:sync',
+      room: 'fallback-raw',
+      map: fallbackMap.map((entry) => ({ ...entry, ownership: 'fallback' })),
+      key: 'fallback-raw-1',
+      mapAuthority: 'draft',
+      mapState: 'provisional',
+      controllerTruth: false,
+    });
 
     assert.deepEqual(env.window.__currentMap, [{
       key: 'noteon:1:77',
@@ -332,6 +341,7 @@ test('viewer bootstrap keeps fallback-mapped unknown raw MIDI diagnostic-only', 
       code: 77,
       ownership: 'fallback',
     }]);
+    assert.equal(env.window.__currentMapRuntimeAuthority, false);
 
     ws.emitMessage({
       type: 'midi_like',

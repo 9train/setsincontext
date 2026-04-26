@@ -173,6 +173,8 @@ function describeMissingOfficialRender(info) {
 }
 
 function allowLegacyMapCompatibility(options) {
+  // Diagnostic/debug escape hatch only. Normal host/viewer runtime must stay on
+  // official render payloads and explicit debug targets, never raw learned maps.
   return !!(options && options.allowLegacyMapFallback === true);
 }
 

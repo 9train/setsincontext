@@ -8,11 +8,12 @@
 //   - Host -> {type:'probe', id}  => server broadcasts to viewers and summarizes
 //   - Viewer -> {type:'probe:ack', id} => server counts unique acks per probe
 //
-// NEW (SOP): Durable room maps with immediate replay to new viewers
+// NEW (SOP): Durable provisional room map metadata with immediate replay to new viewers
 //   - Disk persistence to MAP_FILE (env) with debounce saves
 //   - Stable key hashing for change detection (djb2 of canonical JSON)
 //   - Supports {type:'map:set'},{type:'map:ensure'},{type:'map:get'}
 //   - Sends {type:'map:sync', map, key} to viewers (raw, not wrapped)
+//   - Room maps are draft/review metadata only, never controller truth
 
 import path from 'path';
 import express from 'express';
@@ -476,7 +477,7 @@ function broadcast(obj) {
   }
 }
 
-// === Rooms with presence + lastMap (+ lastKey) ==============================
+// === Rooms with presence + provisional lastMap (+ lastKey) ==================
 // roomName -> { hosts:Set<WebSocket>, viewers:Set<WebSocket>, lastMap:Array|null, lastKey:string|null }
 const rooms = new Map();
 const ROOM_MAP_AUTHORITY = 'draft';
@@ -512,6 +513,8 @@ function createRoomMapSyncFrame(roomName, roomState) {
     mapAuthority: ROOM_MAP_AUTHORITY,
     mapState: ROOM_MAP_STATE,
     controllerTruth: false,
+    diagnosticOnly: true,
+    mapLabel: 'provisional draft room map',
   };
 }
 
@@ -755,13 +758,41 @@ function keyOf(mapArr){
   return String(h>>>0);
 }
 
+function normalizeRoomMapOwnership(value) {
+  const text = String(value || '').trim().toLowerCase();
+  return text === 'fallback' ? 'fallback' : ROOM_MAP_AUTHORITY;
+}
+
+function hasUsableRoomMapEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  const target = String(entry.target || '').trim();
+  const key = String(entry.key || '').trim();
+  const type = String(entry.type || '').trim().toLowerCase();
+  const channel = Number(entry.ch);
+  const code = Number(entry.code);
+
+  if (target && key) return true;
+  if (!target || !type) return false;
+  return Number.isFinite(channel) && Number.isFinite(code);
+}
+
+function normalizeRoomDraftMap(mapArr) {
+  if (!Array.isArray(mapArr) || mapArr.length === 0) return [];
+  return mapArr
+    .filter(hasUsableRoomMapEntry)
+    .map((entry) => ({
+      ...entry,
+      ownership: normalizeRoomMapOwnership(entry.ownership),
+    }));
+}
+
 async function loadMapsFromDisk(){
   try {
     const txt = await fsp.readFile(MAP_FILE, 'utf8');
     const j = JSON.parse(txt || '{}');
     const loadedRooms = Object.keys(j);
     for (const roomName of loadedRooms) {
-      const arr = j[roomName];
+      const arr = normalizeRoomDraftMap(j[roomName]);
       if (Array.isArray(arr) && arr.length) {
         const r = getRoom(roomName);
         r.lastMap = arr;
@@ -902,23 +933,49 @@ wss.on('connection', (ws, req) => {
       ensureJoinedForMessage(ws, msg);
 
       // === Map set/ensure/get/sync ============================================
-      // Host sets/ensures map for room
+      // Host sets/ensures a provisional draft room map for review/diagnostics.
+      // It is replayed to viewers as metadata and never marks controller truth.
       // {type:'map:set', map:[...], key?:string}
       // {type:'map:ensure', map:[...], key:string}
       if (ws.role === 'host' && (msg.type === 'map:set' || msg.type === 'map:ensure') && Array.isArray(msg.map)) {
         const r = getRoom(ws.room);
-        const inKey = msg.key || keyOf(msg.map);
+        const draftMap = normalizeRoomDraftMap(msg.map);
+        if (!draftMap.length) {
+          send(ws, {
+            type:'map:ack',
+            room: ws.room,
+            key: r.lastKey,
+            viewers: r.viewers.size,
+            accepted: false,
+            reason: 'empty-draft-map',
+            mapAuthority: ROOM_MAP_AUTHORITY,
+            mapState: ROOM_MAP_STATE,
+            controllerTruth: false,
+          });
+          return;
+        }
+
+        const inKey = msg.key || keyOf(draftMap);
         // Only update/broadcast if different
         if (r.lastKey !== inKey) {
-          r.lastMap = msg.map;
+          r.lastMap = draftMap;
           r.lastKey = inKey;
           // broadcast to viewers only (RAW, not wrapped)
           broadcastToViewers_raw(ws.room, createRoomMapSyncFrame(ws.room, r), ws);
           scheduleSave(); // optional: persist to disk
-          console.log(`[MAP] ${msg.type} room="${ws.room}" entries=${msg.map.length}`);
+          console.log(`[MAP] ${msg.type} room="${ws.room}" entries=${draftMap.length} provisional`);
         }
         // ack back to host so you know the server saw it
-        send(ws, { type:'map:ack', room: ws.room, key: r.lastKey, viewers: r.viewers.size });
+        send(ws, {
+          type:'map:ack',
+          room: ws.room,
+          key: r.lastKey,
+          viewers: r.viewers.size,
+          accepted: true,
+          mapAuthority: ROOM_MAP_AUTHORITY,
+          mapState: ROOM_MAP_STATE,
+          controllerTruth: false,
+        });
         return;
       }
 

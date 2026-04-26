@@ -407,6 +407,9 @@ test('room map sync is provisional state and stays separate from official contro
     assert.equal(mapFrame.mapAuthority, 'draft');
     assert.equal(mapFrame.mapState, 'provisional');
     assert.equal(mapFrame.controllerTruth, false);
+    assert.equal(mapFrame.diagnosticOnly, true);
+    assert.equal(mapFrame.mapLabel, 'provisional draft room map');
+    assert.equal(mapFrame.map[0].ownership, 'draft');
     assert.equal(mapFrame.truthStatus, undefined);
 
     clearMessages(viewer.messages);
