@@ -42,6 +42,7 @@ test('host.html is the official host page inventory', () => {
     '/src/runtime/app-bridge.js',
     '/src/runtime/host-status-page.js',
     '/src/runtime/host-controller-pipeline.js',
+    '/src/runtime/host-draft-map-sync.js',
     '/src/midi.js',
     '/src/board.js',
     '/src/bootstrap-host.js',
@@ -50,10 +51,50 @@ test('host.html is the official host page inventory', () => {
   assert.match(host, /initSharedPageBoot\(\{\s*role:\s*['"]host['"]/);
   assert.match(host, /await\s+initBoard\(\{\s*hostId:\s*['"]boardHost['"]\s*\}\)/);
   assert.match(host, /initHostControllerPipeline\(\{[\s\S]*runtimeApp,[\s\S]*boardConsume,[\s\S]*hostStatus,[\s\S]*\}\)/);
+  assert.match(host, /initHostDraftMapSync\(\{[\s\S]*runtimeApp,[\s\S]*loadMappings,[\s\S]*\}\)/);
   assert.doesNotMatch(host, /function\s+normalizeInfo\b/);
   assert.doesNotMatch(host, /runtimeApp\.setNormalizer\(normalizeInfo\)/);
+  assert.doesNotMatch(host, /function\s+pushMap\b/);
+  assert.doesNotMatch(host, /setTimeout\(pushMap,\s*250\)/);
+  assert.doesNotMatch(host, /window\.addEventListener\(['"]flx:map-updated['"],\s*pushMap\)/);
+  assert.doesNotMatch(host, /runtimeApp\.getWSClient\(\)\?\.sendMap\(draftMapArray\)/);
+  assert.doesNotMatch(host, /type:\s*['"]map:set['"]/);
   assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
   assertIncludesNone(host, canonicalForbiddenImports, 'host.html');
+});
+
+test('host draft map sync module owns only provisional draft map metadata sync', () => {
+  const source = readRepoFile('src/runtime/host-draft-map-sync.js');
+  const host = readRepoFile('host.html');
+
+  assert.match(source, /export\s+function\s+initHostDraftMapSync\b/);
+  assert.match(source, /export\s+function\s+pushDraftMapMetadata\b/);
+  assertIncludesNone(source, [
+    '../midi.js',
+    '../ws.js',
+    '../board.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../diag.js',
+    '../wizard.js',
+    '../editmode.js',
+    '../launcher.js',
+    '../host-debug.js',
+    '../controllers/',
+  ], 'src/runtime/host-draft-map-sync.js');
+  assert.doesNotMatch(source, /\bbootMIDIFromQuery\b/);
+  assert.doesNotMatch(source, /\bconnectWS\b/);
+  assert.doesNotMatch(source, /\binitBoard\b/);
+  assert.doesNotMatch(source, /\bboardConsume\b/);
+  assert.doesNotMatch(source, /\bruntimeApp\.setNormalizer\b/);
+  assert.doesNotMatch(source, /\bruntimeApp\.setInfoConsumer\b/);
+  assert.doesNotMatch(source, /controllerTruth\s*:\s*true/);
+  assert.doesNotMatch(source, /mapAuthority\s*:\s*['"]official['"]/);
+  assert.doesNotMatch(source, /owner\s*:\s*['"]official['"]/);
+  assert.match(host, /import\s+\{\s*loadMappings\s*\}\s+from\s+['"]\/src\/mapper\.js['"]/);
+  assert.match(host, /initHostDraftMapSync\(\{[\s\S]*loadMappings,[\s\S]*\}\)/);
+  assert.doesNotMatch(host, /function\s+pushMap\b/);
+  assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
 });
 
 test('host controller pipeline module owns only normalized host info glue', () => {

@@ -40,6 +40,7 @@
     import { installHostProbeOnFirstConnect } from '/src/runtime/host-probe.js';
     import { initHostStatusChrome } from '/src/runtime/host-status-page.js';
     import { initHostControllerPipeline } from '/src/runtime/host-controller-pipeline.js';
+    import { initHostDraftMapSync } from '/src/runtime/host-draft-map-sync.js';
     import * as THEME      from '/src/theme.js';
     import { bootMIDIFromQuery } from '/src/midi.js';
     import { recorder as FLXRec } from '/src/recorder.js';
@@ -84,20 +85,12 @@
      * Draft map metadata sync for learn/review tools.
      * This is not official render truth.
      ****************************************************************/
-    function pushMap() {
-      try {
-        const draftMapArray = loadMappings() || [];
-        if (runtimeApp.getWSClient()?.sendMap) {
-          runtimeApp.getWSClient().sendMap(draftMapArray);
-        } else {
-          runtimeApp.getWSClient()?.send?.({ type: 'map:set', map: draftMapArray, ts: Date.now() });
-        }
-      } catch (e) {
-        console.warn('[host] pushMap failed', e);
-      }
-    }
-    setTimeout(pushMap, 250);
-    window.addEventListener('flx:map-updated', pushMap);
+    const draftMapSync = initHostDraftMapSync({
+      runtimeApp,
+      loadMappings,
+      windowRef: window,
+      setTimeoutRef: window.setTimeout.bind(window),
+    });
 
     /****************************************************************
      * WebMIDI capture (host only)
