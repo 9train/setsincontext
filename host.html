@@ -41,6 +41,7 @@
     import { initHostStatusChrome } from '/src/runtime/host-status-page.js';
     import { initHostControllerPipeline } from '/src/runtime/host-controller-pipeline.js';
     import { initHostDraftMapSync } from '/src/runtime/host-draft-map-sync.js';
+    import { startHostMidiCapture } from '/src/runtime/host-midi-capture.js';
     import * as THEME      from '/src/theme.js';
     import { bootMIDIFromQuery } from '/src/midi.js';
     import { recorder as FLXRec } from '/src/recorder.js';
@@ -95,23 +96,11 @@
     /****************************************************************
      * WebMIDI capture (host only)
      ****************************************************************/
-    try {
-      console.log('[MIDI] starting init via bootMIDIFromQuery');
-      const handle = await bootMIDIFromQuery({
-        onInfo: function(info){ try { runtimeApp.consumeNormalizedInfo(info); } catch {} },
-        onStatus: function(s){ try { runtimeApp.setMIDIStatus(s); } catch {} }
-      });
-      const deviceInfo = handle?.getDeviceInfo?.() || {};
-      hostStatus.noteControllerDetails({
-        ...deviceInfo,
-        deviceName: deviceInfo.inputName || deviceInfo.name || handle?.input || null,
-        ready: !!handle?.input,
-      });
-      console.log('[MIDI] init OK');
-    } catch (e) {
-      console.warn('[MIDI] init failed', e);
-      runtimeApp.setMIDIStatus('host: off');
-    }
+    const midiHandle = await startHostMidiCapture({
+      runtimeApp,
+      hostStatus,
+      bootMIDIFromQuery,
+    });
 
     /****************************************************************
      * Launcher (menus + panels)

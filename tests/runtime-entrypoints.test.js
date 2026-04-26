@@ -43,6 +43,7 @@ test('host.html is the official host page inventory', () => {
     '/src/runtime/host-status-page.js',
     '/src/runtime/host-controller-pipeline.js',
     '/src/runtime/host-draft-map-sync.js',
+    '/src/runtime/host-midi-capture.js',
     '/src/midi.js',
     '/src/board.js',
     '/src/bootstrap-host.js',
@@ -52,6 +53,7 @@ test('host.html is the official host page inventory', () => {
   assert.match(host, /await\s+initBoard\(\{\s*hostId:\s*['"]boardHost['"]\s*\}\)/);
   assert.match(host, /initHostControllerPipeline\(\{[\s\S]*runtimeApp,[\s\S]*boardConsume,[\s\S]*hostStatus,[\s\S]*\}\)/);
   assert.match(host, /initHostDraftMapSync\(\{[\s\S]*runtimeApp,[\s\S]*loadMappings,[\s\S]*\}\)/);
+  assert.match(host, /startHostMidiCapture\(\{[\s\S]*runtimeApp,[\s\S]*hostStatus,[\s\S]*bootMIDIFromQuery,[\s\S]*\}\)/);
   assert.doesNotMatch(host, /function\s+normalizeInfo\b/);
   assert.doesNotMatch(host, /runtimeApp\.setNormalizer\(normalizeInfo\)/);
   assert.doesNotMatch(host, /function\s+pushMap\b/);
@@ -59,8 +61,47 @@ test('host.html is the official host page inventory', () => {
   assert.doesNotMatch(host, /window\.addEventListener\(['"]flx:map-updated['"],\s*pushMap\)/);
   assert.doesNotMatch(host, /runtimeApp\.getWSClient\(\)\?\.sendMap\(draftMapArray\)/);
   assert.doesNotMatch(host, /type:\s*['"]map:set['"]/);
+  assert.doesNotMatch(host, /console\.log\(['"]\[MIDI\] starting init via bootMIDIFromQuery['"]\)/);
+  assert.doesNotMatch(host, /const\s+handle\s*=\s*await\s+bootMIDIFromQuery\(\{/);
+  assert.doesNotMatch(host, /runtimeApp\.consumeNormalizedInfo\(info\)/);
+  assert.doesNotMatch(host, /runtimeApp\.setMIDIStatus\(s\)/);
+  assert.doesNotMatch(host, /console\.log\(['"]\[MIDI\] init OK['"]\)/);
+  assert.doesNotMatch(host, /console\.warn\(['"]\[MIDI\] init failed['"],\s*e\)/);
+  assert.doesNotMatch(host, /runtimeApp\.setMIDIStatus\(['"]host: off['"]\)/);
   assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
   assertIncludesNone(host, canonicalForbiddenImports, 'host.html');
+});
+
+test('host MIDI capture module owns only host WebMIDI callback/status wiring', () => {
+  const source = readRepoFile('src/runtime/host-midi-capture.js');
+  const host = readRepoFile('host.html');
+
+  assert.match(source, /export\s+async\s+function\s+startHostMidiCapture\b/);
+  assertIncludesNone(source, [
+    '../midi.js',
+    '../ws.js',
+    '../board.js',
+    '../recorder.js',
+    '../recorder_ui.js',
+    '../diag.js',
+    '../wizard.js',
+    '../editmode.js',
+    '../launcher.js',
+    '../host-debug.js',
+    '../mapper.js',
+    '../controllers/',
+  ], 'src/runtime/host-midi-capture.js');
+  assert.doesNotMatch(source, /\binitBoard\b/);
+  assert.doesNotMatch(source, /\bconnectWS\b/);
+  assert.doesNotMatch(source, /\bboardConsume\b/);
+  assert.doesNotMatch(source, /\bruntimeApp\.setNormalizer\b/);
+  assert.doesNotMatch(source, /\bruntimeApp\.setInfoConsumer\b/);
+  assert.doesNotMatch(source, /\bloadMappings\b/);
+  assert.doesNotMatch(source, /\bsendMap\b/);
+  assert.match(host, /import\s+\{\s*bootMIDIFromQuery\s*\}\s+from\s+['"]\/src\/midi\.js['"]/);
+  assert.match(host, /import\s+\{\s*startHostMidiCapture\s*\}\s+from\s+['"]\/src\/runtime\/host-midi-capture\.js['"]/);
+  assert.match(host, /startHostMidiCapture\(\{[\s\S]*bootMIDIFromQuery,[\s\S]*\}\)/);
+  assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
 });
 
 test('host draft map sync module owns only provisional draft map metadata sync', () => {
