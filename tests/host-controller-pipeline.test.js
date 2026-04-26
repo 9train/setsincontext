@@ -109,7 +109,7 @@ test('host.html delegates pipeline glue while keeping host boot imports', () => 
     'runtimeApp.consumeInfo(info)',
     'boardConsume',
     'bootMIDIFromQuery',
-    'pushMap',
+    'initHostDraftMapSync',
     'loadMappings',
   ], 'host.html');
 });
