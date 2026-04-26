@@ -44,6 +44,10 @@ test('host.html is the official host page inventory', () => {
     '/src/board.js',
     '/src/bootstrap-host.js',
   ], 'host.html');
+  assert.match(host, /<script\s+type=["']module["']>/);
+  assert.match(host, /initSharedPageBoot\(\{\s*role:\s*['"]host['"]/);
+  assert.match(host, /await\s+initBoard\(\{\s*hostId:\s*['"]boardHost['"]\s*\}\)/);
+  assert.doesNotMatch(host, /\/src\/runtime\/host-page\.js/);
   assertIncludesNone(host, canonicalForbiddenImports, 'host.html');
 });
 
@@ -51,12 +55,47 @@ test('viewer.html is the official viewer page inventory', () => {
   const viewer = readRepoFile('viewer.html');
 
   assertIncludesAll(viewer, [
+    '/src/runtime/viewer-page.js',
+    '/src/bootstrap-viewer.js',
+  ], 'viewer.html');
+  assert.match(viewer, /initViewerPage\(\)/);
+  assertIncludesNone(viewer, [
     '/src/bootstrap-shared.js',
     '/src/runtime/app-bridge.js',
     '/src/board.js',
-    '/src/bootstrap-viewer.js',
+    '/src/jog-runtime.js',
+    '/src/theme.js',
   ], 'viewer.html');
   assertIncludesNone(viewer, canonicalForbiddenImports, 'viewer.html');
+});
+
+test('viewer page module owns viewer UI boot dependencies', () => {
+  const viewerPage = readRepoFile('src/runtime/viewer-page.js');
+
+  assertIncludesAll(viewerPage, [
+    '../board.js',
+    '../bootstrap-shared.js',
+    '../jog-runtime.js',
+    '../theme.js',
+    './app-bridge.js',
+  ], 'src/runtime/viewer-page.js');
+  assert.match(viewerPage, /export\s+async\s+function\s+initViewerPage\b/);
+  assert.doesNotMatch(viewerPage, /\bconnectWS\b/);
+  assert.doesNotMatch(viewerPage, /(?:^|['"])\/?src\/ws\.js|['"]\.\.?\/ws\.js['"]/);
+});
+
+test('viewer websocket boot stays in bootstrap-viewer.js', () => {
+  const viewer = readRepoFile('viewer.html');
+  const bootstrapViewer = readRepoFile('src/bootstrap-viewer.js');
+
+  assert.match(viewer, /<script\s+type=["']module["']\s+src=["']\/src\/bootstrap-viewer\.js["']><\/script>/);
+  assertIncludesAll(bootstrapViewer, [
+    './ws.js',
+    './bootstrap-shared.js',
+    './runtime/app-bridge.js',
+    'connectWS',
+    "const WS_ROLE = 'viewer'",
+  ], 'src/bootstrap-viewer.js');
 });
 
 test('root index.html is only a launcher into host.html or viewer.html', () => {
