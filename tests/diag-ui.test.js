@@ -73,6 +73,19 @@ function findNode(root, predicate) {
   return match;
 }
 
+// Polls predicate on each setImmediate tick until it returns truthy or timeout
+// expires. setImmediate is not replaced by installMockBrowser, so it always
+// uses the real Node.js async schedule — safe to call while mock timers are active.
+async function waitFor(predicate, { timeout = 2000 } = {}) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const result = predicate();
+    if (result) return result;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error(`waitFor timed out after ${timeout}ms`);
+}
+
 function createBoardFixture(document) {
   const svgRoot = document.createElement('svg');
   svgRoot.setAttribute('id', 'board');
@@ -90,6 +103,68 @@ function createBoardFixture(document) {
 
   return { svgRoot, play, cue };
 }
+
+test('debugger selected-surface inspection bridges to Edit Mode without writing localStorage', async () => {
+  const env = installMockBrowser();
+  let diag = null;
+
+  try {
+    const [{ getRuntimeApp }, diagModule] = await Promise.all([
+      importFresh('../src/runtime/app-bridge.js'),
+      importFresh('../src/diag.js'),
+    ]);
+    diag = diagModule;
+
+    const runtimeApp = getRuntimeApp();
+    runtimeApp.consumeInfo(createDebuggerInfo());
+
+    const { svgRoot, play } = createBoardFixture(env.document);
+    setBoardSvgRoot(svgRoot);
+
+    diag.show();
+
+    const root = findNode(env.document.body, (node) => node && node.id === 'diagRoot');
+    const advancedTab = findNode(root, (node) => node && node.dataset && node.dataset.tab === 'advanced');
+    advancedTab.dispatchEvent({ type: 'click', target: advancedTab });
+
+    env.document.dispatchEvent({ type: 'click', target: play });
+
+    const editLearnButton = findNode(root, (node) =>
+      node && node.dataset && node.dataset.diagAction === 'edit-learn-surface'
+    );
+    assert.ok(editLearnButton, 'Edit / Learn This Surface button should exist on selected surface');
+    assert.match(editLearnButton.textContent, /Edit \/ Learn This Surface/);
+
+    const copyReviewButton = findNode(root, (node) =>
+      node && typeof node.textContent === 'string' && node.textContent === 'Copy Draft Review JSON'
+    );
+    assert.ok(copyReviewButton, 'Copy Draft Review JSON button should still exist');
+
+    assert.equal(env.storage.size, 0, 'no localStorage writes should happen before bridging');
+
+    editLearnButton.dispatchEvent({ type: 'click', target: editLearnButton });
+    await waitFor(() => findNode(env.document.body, (node) => node && node.id === 'editbar'));
+
+    const editbar = findNode(env.document.body, (node) => node && node.id === 'editbar');
+    assert.ok(editbar, 'edit bar should be created after the bridge click');
+    assert.equal(editbar.dataset.selId, 'play_L');
+    assert.equal(editbar.dataset.selCanonicalTarget, 'deck.left.transport.play');
+    assert.equal(editbar.style.display, 'flex');
+
+    const selDisplay = findNode(editbar, (node) => node && node.id === 'ed-sel');
+    assert.ok(selDisplay, 'selected-target display should exist');
+    assert.ok(
+      selDisplay.textContent && selDisplay.textContent.includes('deck.left.transport.play'),
+      `selected-target display should reference the canonical target, got "${selDisplay.textContent}"`,
+    );
+
+    assert.equal(env.storage.size, 0, 'bridging into Edit Mode must not write localStorage by itself');
+  } finally {
+    try { setBoardSvgRoot(null); } catch {}
+    try { diag?.hide?.(); } catch {}
+    env.restore();
+  }
+});
 
 test('diagnostics default to Basic, keep the Advanced trace, and let hover help coexist with board pinning', async () => {
   const env = installMockBrowser();
