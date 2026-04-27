@@ -148,20 +148,94 @@ function setSavedJogCalibration(env, preferences) {
   env.localStorage.setItem('flx.jogCalibration.v1', JSON.stringify(preferences));
 }
 
-test('absolute mode maps 0..127 to 0..360 on the matched jog side', () => {
+test('absolute mode maps authoritative jog events 0..127 to 0..360 on the matched jog side', () => {
   const env = installMockBrowser({ elementIds: ['jog_L', 'jog_R'] });
-  const map = [{ key: 'cc:1:22', target: 'jog_L' }];
-  const jog = installJogRuntime({ getUnifiedMap: () => map });
+  const jog = installJogRuntime({ getUnifiedMap: () => [] });
 
   try {
     jog.setMode('absolute');
 
-    env.window.consumeInfo({ type: 'cc', ch: 1, controller: 22, value: 0 });
+    env.window.consumeInfo(createMotionEvent({
+      side: 'left',
+      controller: 22,
+      value: 0,
+      timestamp: 1000,
+    }));
     assert.equal(env.elements.jog_L.style.transform, 'rotate(0deg)');
 
-    env.window.consumeInfo({ type: 'cc', ch: 1, controller: 22, value: 127 });
+    env.window.consumeInfo(createMotionEvent({
+      side: 'left',
+      controller: 22,
+      value: 127,
+      timestamp: 1001,
+    }));
     assert.equal(env.elements.jog_L.style.transform, 'rotate(360deg)');
     assert.equal(env.elements.jog_R.style.transform, undefined);
+  } finally {
+    env.restore();
+  }
+});
+
+test('remote draft unified maps do not move jog pixels without authoritative side truth in canonical runtime', () => {
+  const env = installMockBrowser({ elementIds: ['jog_L', 'jog_R'] });
+  const remoteDraftMap = [{ key: 'cc:1:33', target: 'jog_L', ownership: 'draft', source: 'room-sync' }];
+  const jog = installJogRuntime({ getUnifiedMap: () => remoteDraftMap });
+
+  try {
+    jog.setMode('absolute');
+
+    const info = {
+      type: 'cc',
+      interaction: 'cc',
+      ch: 1,
+      controller: 33,
+      d1: 33,
+      d2: 127,
+      value: 127,
+      timestamp: 1000,
+    };
+    env.window.consumeInfo(info);
+
+    assert.equal(env.elements.jog_L.style.transform, undefined);
+    assert.equal(env.elements.jog_R.style.transform, undefined);
+    assert.equal(info.render, undefined);
+    assert.equal(info._jogRuntimeDiagnostic.eventKind, 'unresolved');
+  } finally {
+    env.restore();
+  }
+});
+
+test('local learned-map entries alone do not move jog pixels without authoritative side truth in canonical runtime', () => {
+  const env = installMockBrowser({ elementIds: ['jog_L', 'jog_R'] });
+  const learnedMap = [{
+    type: 'cc',
+    ch: 1,
+    code: 33,
+    target: 'jog_L',
+    ownership: 'draft',
+    source: 'learn-draft',
+  }];
+  const jog = installJogRuntime({ getUnifiedMap: () => learnedMap });
+
+  try {
+    jog.setMode('absolute');
+
+    const info = {
+      type: 'cc',
+      interaction: 'cc',
+      ch: 1,
+      controller: 33,
+      d1: 33,
+      d2: 127,
+      value: 127,
+      timestamp: 1000,
+    };
+    env.window.consumeInfo(info);
+
+    assert.equal(env.elements.jog_L.style.transform, undefined);
+    assert.equal(env.elements.jog_R.style.transform, undefined);
+    assert.equal(info.render, undefined);
+    assert.equal(info._jogRuntimeDiagnostic.eventKind, 'unresolved');
   } finally {
     env.restore();
   }
@@ -1609,10 +1683,13 @@ test('authoritative jog visuals let the viewer catch up without double-applying 
   }
 });
 
-test('escaped learned-map jog targets still resolve the correct side', () => {
+test('debug opt-in allows escaped unified-map jog targets to resolve the correct side', () => {
   const env = installMockBrowser({ elementIds: ['jog_x5F_L', 'jog_x5F_R'] });
   const map = [{ key: 'cc:1:33', target: 'jog_x5F_L' }];
-  const jog = installJogRuntime({ getUnifiedMap: () => map });
+  const jog = installJogRuntime({
+    getUnifiedMap: () => map,
+    allowUnifiedMapSideLookup: true,
+  });
 
   try {
     jog.setMode('absolute');
@@ -1627,16 +1704,20 @@ test('escaped learned-map jog targets still resolve the correct side', () => {
 
 test('install guard prevents double-wrapping consumeInfo', () => {
   const env = installMockBrowser({ elementIds: ['jog_L'] });
-  const map = [{ key: 'cc:1:22', target: 'jog_L' }];
   let calls = 0;
   env.window.consumeInfo = () => { calls += 1; };
 
   try {
-    const jog = installJogRuntime({ getUnifiedMap: () => map });
+    const jog = installJogRuntime({ getUnifiedMap: () => [] });
     jog.setMode('absolute');
-    installJogRuntime({ getUnifiedMap: () => map });
+    installJogRuntime({ getUnifiedMap: () => [] });
 
-    env.window.consumeInfo({ type: 'cc', ch: 1, controller: 22, value: 127 });
+    env.window.consumeInfo(createMotionEvent({
+      side: 'left',
+      controller: 22,
+      value: 127,
+      timestamp: 1000,
+    }));
 
     assert.equal(calls, 1);
     assert.equal(env.elements.jog_L.style.transform, 'rotate(360deg)');

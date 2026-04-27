@@ -1347,10 +1347,8 @@ export function resetJogCalibrationPreferences(preferences, {
   });
 }
 
-function findJogSide(info, mapEntries) {
-  const canonicalSide = getJogSideFromCanonicalInfo(info);
-  if (canonicalSide) return canonicalSide;
-
+function getJogSideFromUnifiedMap(info, mapEntries) {
+  if (!info || typeof info !== 'object') return null;
   const type = (info.type || '').toLowerCase();
   const code = type === 'cc' ? (info.controller ?? info.d1) : info.d1;
   const key = `${type}:${info.ch}:${code}`;
@@ -1364,6 +1362,15 @@ function findJogSide(info, mapEntries) {
     if (side) return side;
   }
   return null;
+}
+
+function findJogSide(info, { allowUnifiedMapSideLookup = false, mapEntries = null } = {}) {
+  const canonicalSide = getJogSideFromCanonicalInfo(info);
+  if (canonicalSide) return canonicalSide;
+  // Canonical host/viewer runtime must not let draft/fallback unified maps move jog visuals
+  // unless a debug/learn tool explicitly opts into map-based side lookup.
+  if (!allowUnifiedMapSideLookup) return null;
+  return getJogSideFromUnifiedMap(info, mapEntries);
 }
 
 function updateJogVisualState(sideState) {
@@ -1521,6 +1528,7 @@ function applyAuthoritativeJogVisual(sideState, info, visual, now, feelConfig) {
 
 export function installJogRuntime({
   getUnifiedMap = () => [],
+  allowUnifiedMapSideLookup = false,
   getFeelConfig = getWindowFeelConfig,
   exposeGlobalControls = false,
   now = () => Date.now(),
@@ -1654,7 +1662,10 @@ export function installJogRuntime({
   function onEvent(info) {
     if (!info || CFG.mode === 'off') return;
 
-    const side = findJogSide(info, getUnifiedMap?.() || []);
+    const side = findJogSide(info, {
+      allowUnifiedMapSideLookup,
+      mapEntries: allowUnifiedMapSideLookup ? (getUnifiedMap?.() || []) : null,
+    });
     if (!side) {
       if (isLikelyJogEvent(info)) {
         const unresolvedReason = 'A jog-like event reached the runtime, but no matching jog side could be resolved.';
