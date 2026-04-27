@@ -296,6 +296,65 @@ test('host relay preserves a slim authoritative jog visual snapshot for viewers'
   }
 });
 
+test('host relay strips boardCompat while preserving explicit debug target metadata', async () => {
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '',
+    WebSocketImpl: FakeWebSocket,
+  });
+
+  try {
+    const { connectWS } = await importFresh('../src/ws.js');
+    const client = connectWS({
+      url: 'ws://relay.test',
+      role: 'host',
+      room: 'tau',
+    });
+
+    assert.equal(sockets.length, 1);
+    const ws = sockets[0];
+    ws.open();
+
+    await env.advanceTimersBy(1300);
+
+    const sent = client.send({
+      eventType: 'normalized_input',
+      canonicalTarget: 'deck.left.transport.play',
+      mappingId: 'deck.left.transport.play.main.press',
+      mapped: true,
+      interaction: 'noteon',
+      type: 'noteon',
+      ch: 1,
+      d1: 11,
+      d2: 127,
+      value: 127,
+      timestamp: 456,
+      boardCompat: {
+        targetId: 'play_L',
+        source: 'legacy-compatibility',
+        reason: 'stale-board-target',
+      },
+      __flxDebug: true,
+      __flxDebugSource: 'host-debug',
+      __flxDebugTarget: 'play_L',
+      __flxDebugKey: 'noteon:1:11',
+    });
+
+    assert.equal(sent, true);
+
+    const frames = ws.sent.map((message) => JSON.parse(message));
+    const relayFrame = frames.find((frame) => frame.type === 'controller_event');
+
+    assert.equal('boardCompat' in relayFrame.event, false);
+    assert.equal(relayFrame.event.__flxDebug, true);
+    assert.equal(relayFrame.event.__flxDebugSource, 'host-debug');
+    assert.equal(relayFrame.event.__flxDebugTarget, 'play_L');
+    assert.equal(relayFrame.event.__flxDebugKey, 'noteon:1:11');
+  } finally {
+    env.restore();
+  }
+});
+
 test('probe winner completes the same handshake setup as reconnect without duplicate hello', async () => {
   const statuses = [];
   const intervalCalls = [];

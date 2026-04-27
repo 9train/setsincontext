@@ -376,7 +376,7 @@ test('slider and fader behavior still works', async () => {
   });
 });
 
-test('unsafe jog compatibility targets cannot move the physical crossfader', async () => {
+test('bare boardCompat cannot move the physical crossfader in runtime', async () => {
   await withBoardRuntimeEnv(async () => {
     const root = new MockSvgRoot();
     const crossfader = createSliderFixture('xfader_slider', {
@@ -412,8 +412,10 @@ test('unsafe jog compatibility targets cannot move the physical crossfader', asy
 
     assert.equal(crossfader.getAttribute('x'), '0');
     assert.equal(info._boardRender.targetId, null);
+    assert.equal(info._boardRender.authority, 'official-missing');
+    assert.equal(info._boardRender.source, 'resolved-render-target-required');
     assert.equal(info._boardRender.outcome, 'blocked');
-    assert.equal(info._boardRender.detail, 'physical-crossfader-truth-required');
+    assert.equal(info._boardRender.detail, 'official-render-target-required');
   });
 });
 

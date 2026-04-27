@@ -119,36 +119,24 @@ function findOfficialMeaningHint(info) {
 
 function findExplicitCompatibilityEntry(info) {
   if (!info || typeof info !== 'object') return null;
-
-  const compat = info.boardCompat && typeof info.boardCompat === 'object'
-    ? info.boardCompat
-    : null;
-  const target = String(
-    compat && compat.targetId
-    || (info.__flxDebug === true ? info.__flxDebugTarget : '')
-    || ''
-  ).trim();
+  const target = info.__flxDebug === true
+    ? String(info.__flxDebugTarget || '').trim()
+    : '';
   if (!target) return null;
 
   return {
     target,
-    canonicalTarget: compat && compat.canonicalTarget
-      || info.canonicalTarget
+    canonicalTarget: info.canonicalTarget
       || inferCanonicalTargetFromMappingId(info.mappingId)
       || null,
-    mappingId: compat && compat.mappingId
-      || info.mappingId
+    mappingId: info.mappingId
       || null,
-    context: compat && compat.context
-      || info.context
+    context: info.context
       || null,
-    profileId: compat && compat.profileId
-      || info.profileId
+    profileId: info.profileId
       || null,
-    source: compat && compat.source
-      || (info.__flxDebug === true ? 'debug-explicit-target' : 'explicit-compatibility-target'),
-    reason: compat && compat.reason
-      || (info.__flxDebug === true ? 'debug-only-visible-control' : 'explicit-compatibility-target'),
+    source: 'debug-explicit-target',
+    reason: 'debug-only-visible-control',
   };
 }
 

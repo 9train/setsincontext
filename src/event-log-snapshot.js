@@ -512,7 +512,9 @@ function deriveBindingStatus(info, binding, boardRender) {
   if (boardRender && (boardRender.compatibility || String(boardRender.authority || '').startsWith('compatibility'))) {
     return 'compatibility';
   }
-  if (info && (info.boardCompat || info.__flxDebug === true)) return 'compatibility';
+  if (info && info.__flxDebug === true && String(info.__flxDebugTarget || '').trim()) {
+    return 'compatibility';
+  }
   return 'unmatched';
 }
 

@@ -216,6 +216,68 @@ test('recorder export metadata is additive and keeps v3 event payloads compatibl
   }
 });
 
+test('recorder export strips stale boardCompat while preserving explicit debug target metadata', () => {
+  const recorder = createRecorder();
+  const originalWindow = globalThis.window;
+  const consumed = [];
+  const inbound = {
+    type: 'cc',
+    ch: 1,
+    d1: 19,
+    d2: 64,
+    value: 64,
+    timestamp: 123,
+    boardCompat: {
+      target: 'slider_TEMPO_L',
+      ownership: 'draft',
+    },
+    __flxDebug: true,
+    __flxDebugTarget: 'slider_TEMPO_L',
+    _boardRender: {
+      targetId: 'slider_TEMPO_L',
+      authority: 'compatibility-debug',
+      ownership: 'draft',
+      source: 'debug-target-preview',
+      fallbackReason: 'explicit-debug-target',
+      truthStatus: 'pending',
+      compatibility: true,
+      blocked: false,
+      applied: false,
+      outcome: 'pending',
+      detail: 'debug-target-preview',
+    },
+  };
+
+  globalThis.window = {
+    consumeInfo(info) {
+      consumed.push(info);
+      return info;
+    },
+  };
+
+  try {
+    recorder.install();
+    recorder.start();
+
+    globalThis.window.consumeInfo(inbound);
+    const events = recorder.stop();
+    const exported = JSON.parse(recorder.exportJSON());
+
+    assert.equal(consumed.length, 1);
+    assert.ok(consumed[0].boardCompat);
+    assert.equal(events.length, 1);
+    assert.equal('boardCompat' in events[0].replayInfo, false);
+    assert.equal(events[0].replayInfo.__flxDebugTarget, 'slider_TEMPO_L');
+    assert.equal(events[0].replayInfo._boardRender.targetId, 'slider_TEMPO_L');
+    assert.equal('boardCompat' in exported.events[0].replay.info, false);
+    assert.equal(exported.events[0].replay.info.__flxDebugTarget, 'slider_TEMPO_L');
+    assert.equal(exported.events[0].replay.info._boardRender.targetId, 'slider_TEMPO_L');
+  } finally {
+    recorder.uninstall();
+    globalThis.window = originalWindow;
+  }
+});
+
 test('recorder loads legacy v1 recordings and rebuilds reusable log snapshots', () => {
   const recorder = createRecorder();
   const legacyEvent = attachBoardRender(createResolvedPlayEvent());

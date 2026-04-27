@@ -461,6 +461,63 @@ test('viewer bootstrap forwards linear control WS info to the shared consumer', 
   }
 });
 
+test('viewer bootstrap ignores stale boardCompat targets received over WS', async () => {
+  const seen = [];
+  const { root, elements } = createBoardFixture(['play_L']);
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '?ws=ws://viewer.test&room=compat-stale',
+    WebSocketImpl: FakeWebSocket,
+  });
+  resetBoardState();
+  setBoardSvgRoot(root);
+  installBoardWindowBindings();
+  env.window.consumeInfo = (info) => {
+    seen.push(info);
+    consumeInfo(info);
+    return info;
+  };
+
+  try {
+    await importFresh('../src/bootstrap-viewer.js');
+    assert.equal(sockets.length, 1);
+
+    const ws = sockets[0];
+    ws.open();
+    await env.advanceTimersBy(1200);
+
+    ws.emitMessage({
+      type: 'controller_event',
+      event: {
+        type: 'noteon',
+        ch: 1,
+        d1: 11,
+        d2: 127,
+        value: 127,
+        boardCompat: {
+          targetId: 'play_L',
+          source: 'legacy-compatibility',
+          reason: 'stale-board-target',
+        },
+      },
+    });
+
+    assert.equal(seen.length, 1);
+    assert.deepEqual(seen[0].boardCompat, {
+      targetId: 'play_L',
+      source: 'legacy-compatibility',
+      reason: 'stale-board-target',
+    });
+    assert.equal(seen[0]._boardRender.targetId, null);
+    assert.equal(seen[0]._boardRender.authority, 'unmapped');
+    assert.equal(seen[0]._boardRender.outcome, 'absent');
+    assert.equal(elements.get('play_L').classList.contains('lit'), false);
+  } finally {
+    resetBoardState();
+    env.restore();
+  }
+});
+
 test('viewer bootstrap retains conflicting remote maps as draft while official relay render wins', async () => {
   const seen = [];
   const remoteMap = [{

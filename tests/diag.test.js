@@ -331,6 +331,67 @@ test('debugger snapshot labels draft compatibility render ownership explicitly',
   assert.equal(snapshot.debugTransaction.mappingAuthority.owner, 'draft');
 });
 
+test('debugger snapshot does not treat bare boardCompat as compatibility ownership', () => {
+  const snapshot = buildDebuggerEventSnapshot({
+    type: 'cc',
+    ch: 1,
+    d1: 19,
+    d2: 64,
+    value: 64,
+    timestamp: 123,
+    boardCompat: {
+      target: 'play_L',
+      ownership: 'draft',
+    },
+    _boardRender: {
+      targetId: null,
+      authority: 'unmapped',
+      ownership: 'unknown',
+      source: 'resolved-render-target-required',
+      fallbackReason: null,
+      truthStatus: 'unknown',
+      compatibility: false,
+      blocked: false,
+      applied: false,
+      outcome: 'absent',
+      detail: 'no-render-target',
+    },
+  });
+
+  assert.equal(snapshot.binding.status, 'unmatched');
+  assert.equal(snapshot.render.authority, 'unmapped');
+  assert.equal(snapshot.authority.resolutionOwner, 'unknown');
+});
+
+test('debugger snapshot keeps explicit debug targets marked as compatibility', () => {
+  const snapshot = buildDebuggerEventSnapshot({
+    type: 'cc',
+    ch: 1,
+    d1: 19,
+    d2: 64,
+    value: 64,
+    timestamp: 123,
+    __flxDebug: true,
+    __flxDebugTarget: 'slider_TEMPO_L',
+    _boardRender: {
+      targetId: null,
+      authority: 'unmapped',
+      ownership: 'unknown',
+      source: 'debug-target-preview',
+      fallbackReason: null,
+      truthStatus: 'unknown',
+      compatibility: false,
+      blocked: false,
+      applied: false,
+      outcome: 'absent',
+      detail: 'no-render-target',
+    },
+  });
+
+  assert.equal(snapshot.binding.status, 'compatibility');
+  assert.equal(snapshot.authority.bindingStatus, 'compatibility');
+});
+
 test('diagnostics surface draft candidates without making unknown raw events authoritative', () => {
   const mapEntries = [{
     key: 'noteon:1:77',

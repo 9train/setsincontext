@@ -506,19 +506,6 @@ function sanitizeRelayJogVisual(jogVisual) {
   return Object.keys(out).length ? out : undefined;
 }
 
-function sanitizeRelayBoardCompat(boardCompat) {
-  if (!boardCompat || typeof boardCompat !== 'object') return undefined;
-  const out = {};
-  assignIfDefined(out, 'targetId', asRelayString(boardCompat.targetId));
-  assignIfDefined(out, 'canonicalTarget', asRelayString(boardCompat.canonicalTarget));
-  assignIfDefined(out, 'mappingId', asRelayString(boardCompat.mappingId));
-  assignIfDefined(out, 'context', sanitizeRelayContext(boardCompat.context));
-  assignIfDefined(out, 'profileId', asRelayString(boardCompat.profileId));
-  assignIfDefined(out, 'source', asRelayString(boardCompat.source));
-  assignIfDefined(out, 'reason', asRelayString(boardCompat.reason));
-  return Object.keys(out).length ? out : undefined;
-}
-
 function buildRelayEvent(info) {
   const raw = normalizeInfo(info);
   if (!raw || typeof raw !== 'object') return null;
@@ -549,7 +536,6 @@ function buildRelayEvent(info) {
   assignIfDefined(relay, 'context', sanitizeRelayContext(raw.context));
   assignIfDefined(relay, 'truthStatus', asRelayString(raw.truthStatus || raw.render && raw.render.truthStatus));
   assignIfDefined(relay, 'render', sanitizeRelayRender(raw.render, raw));
-  assignIfDefined(relay, 'boardCompat', sanitizeRelayBoardCompat(raw.boardCompat));
   assignIfDefined(relay, 'interaction', normalizedInteraction);
   assignIfDefined(relay, 'type', type ? type.toLowerCase() : undefined);
   assignIfDefined(relay, 'ch', channel);

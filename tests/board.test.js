@@ -447,7 +447,7 @@ test('explicit compatibility canonical resolution still beats corrupted raw lear
   }, badMap, { allowLegacyMapFallback: true }), 'jog_L');
 });
 
-test('jog motion compatibility targets cannot hijack the physical crossfader render target', () => {
+test('bare boardCompat no longer becomes render authority for jog motion', () => {
   const info = {
     canonicalTarget: 'deck.left.jog.motion',
     mappingId: 'deck.left.jog.motion.primary',
@@ -466,16 +466,16 @@ test('jog motion compatibility targets cannot hijack the physical crossfader ren
 
   assert.deepEqual(resolveInfoRenderPlan(info, []), {
     targetId: null,
-    authority: 'compatibility-render',
-    source: 'unsafe-crossfader-render-blocked',
-    fallbackReason: 'physical-crossfader-truth-required',
+    authority: 'official-missing',
+    source: 'resolved-render-target-required',
+    fallbackReason: 'official-render-target-required',
     canonicalTarget: 'deck.left.jog.motion',
     mappingId: 'deck.left.jog.motion.primary',
     context: null,
     profileId: null,
-    ownership: 'fallback',
-    fallback: true,
-    compatibility: true,
+    ownership: 'official',
+    fallback: false,
+    compatibility: false,
     blocked: true,
   });
   assert.strictEqual(resolveInfoRenderTarget(info, []), null);

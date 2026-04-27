@@ -65,6 +65,15 @@ function cloneStructuredValue(value) {
   return cloneRecordingValue(value);
 }
 
+function sanitizeReplayInfoClone(replayInfo) {
+  const clonedReplayInfo = replayInfo && typeof replayInfo === 'object'
+    ? cloneStructuredValue(replayInfo)
+    : null;
+  if (!clonedReplayInfo) return null;
+  delete clonedReplayInfo.boardCompat;
+  return clonedReplayInfo;
+}
+
 function cloneRecorderEvent(event) {
   if (!event || typeof event !== 'object') return null;
   const hasSummary = typeof event.summary === 'string' || typeof event.recentSummary === 'string';
@@ -117,9 +126,7 @@ export function createRecordedTiming(options = {}) {
 }
 
 export function buildStoredRecordedEvent(replayInfo, event = null) {
-  const clonedReplayInfo = replayInfo && typeof replayInfo === 'object'
-    ? cloneStructuredValue(replayInfo)
-    : null;
+  const clonedReplayInfo = sanitizeReplayInfoClone(replayInfo);
   const reusableEvent = sanitizeStoredEvent(event);
   if (reusableEvent) return reusableEvent;
   if (!clonedReplayInfo) return null;
@@ -127,9 +134,7 @@ export function buildStoredRecordedEvent(replayInfo, event = null) {
 }
 
 export function createRecordedEntry(replayInfo, options = {}) {
-  const clonedReplayInfo = replayInfo && typeof replayInfo === 'object'
-    ? cloneStructuredValue(replayInfo)
-    : null;
+  const clonedReplayInfo = sanitizeReplayInfoClone(replayInfo);
   if (!clonedReplayInfo) return null;
 
   const sourceTimestamp = options.sourceTimestamp != null
