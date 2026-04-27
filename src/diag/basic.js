@@ -19,8 +19,11 @@ function formatPinnedStatus(inspectionPinned) {
 
 function formatTruthBadgeLabel(status) {
   if (status === 'official') return 'official truth';
-  if (status === 'draft') return 'draft mapping';
-  if (status === 'fallback') return 'fallback mapping';
+  if (status === 'review-only' || status === 'candidate') return 'review-only candidate';
+  if (status === 'debug-only') return 'debug-only target';
+  if (status === 'unmapped') return 'unmapped';
+  if (status === 'draft') return 'review-only candidate';
+  if (status === 'fallback') return 'review-only candidate';
   return 'technical only';
 }
 

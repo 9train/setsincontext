@@ -241,20 +241,20 @@ export function initLauncher({
             </div>
           </article>
           <article class="launcher-card">
-            <div class="launcher-card-title">Mapping Wizard</div>
-            <div class="launcher-card-copy">Use the wizard for inspectable draft mapping review without silently promoting learned behavior into official truth.</div>
+            <div class="launcher-card-title">Edit Mode</div>
+            <div class="launcher-card-copy">Edit Mode is the single draft-first path for learning and reviewing mappings. Open the debugger and use "Edit / Learn This Surface" to bridge a selected board surface here.</div>
             <div class="launcher-action-row">
-              <button type="button" data-act="showWizard">Open Mapping Wizard</button>
+              <button type="button" id="launcherEditToggle"></button>
             </div>
           </article>
           <details class="launcher-advanced">
             <summary>Advanced</summary>
             <div class="launcher-advanced-body">
               <article class="launcher-card">
-                <div class="launcher-card-title">Edit Mode</div>
-                <div class="launcher-card-copy">Direct target listening stays available here for draft-first review work when you need a more technical mapping pass.</div>
+                <div class="launcher-card-title">Legacy Mapping Wizard</div>
+                <div class="launcher-card-copy">Kept for compatibility while Edit Mode becomes the single path. Prefer Edit Mode for draft-first learn capture.</div>
                 <div class="launcher-action-row">
-                  <button type="button" id="launcherEditToggle"></button>
+                  <button type="button" data-act="showWizard">Open Legacy Mapping Wizard</button>
                 </div>
               </article>
             </div>

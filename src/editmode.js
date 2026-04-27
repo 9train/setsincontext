@@ -7,7 +7,7 @@ import { getElByAnyIdIn, resolveProfileEditorTargetFromElement } from './control
 
 const DEFAULT_EDIT_PROFILE = getDefaultControllerProfile();
 
-let on = false, bar;
+let on = false, bar, selEl, msgEl, learnBtn, dlBtn;
 
 function css() {
   const s = document.createElement('style');
@@ -30,16 +30,21 @@ function buildBar() {
   css();
   bar = document.createElement('div');
   bar.id = 'editbar';
-  bar.innerHTML = `
-    <span>Edit Mode</span>
-    <span class="sel" id="ed-sel">— click a control —</span>
-    <button id="ed-learn">Listen</button>
-    <button id="ed-dl">Copy selected review JSON</button>
-    <span id="ed-msg"></span>
-  `;
-  document.body.appendChild(bar);
 
-  bar.querySelector('#ed-learn').onclick = async ()=>{
+  const titleEl = document.createElement('span');
+  titleEl.textContent = 'Edit Mode';
+  bar.appendChild(titleEl);
+
+  selEl = document.createElement('span');
+  selEl.id = 'ed-sel';
+  if (selEl.classList && typeof selEl.classList.add === 'function') selEl.classList.add('sel');
+  selEl.textContent = '— click a control —';
+  bar.appendChild(selEl);
+
+  learnBtn = document.createElement('button');
+  learnBtn.id = 'ed-learn';
+  learnBtn.textContent = 'Listen';
+  learnBtn.onclick = async () => {
     const target = bar.dataset.selId;
     const canonicalTarget = bar.dataset.selCanonicalTarget || null;
     if (!target) return msg('Pick a control first.');
@@ -47,12 +52,17 @@ function buildBar() {
       const { learnNext } = await import('./learn.js');
       const entry = await learnNext({ target, canonicalTarget, name: target });
       duplicateCheck(entry);
-      msg('Saved: '+entry.key);
+      msg('Saved: ' + entry.key);
     } catch (e) {
       msg(e.message, true);
     }
   };
-  bar.querySelector('#ed-dl').onclick = async ()=>{
+  bar.appendChild(learnBtn);
+
+  dlBtn = document.createElement('button');
+  dlBtn.id = 'ed-dl';
+  dlBtn.textContent = 'Copy selected review JSON';
+  dlBtn.onclick = async () => {
     const target = bar.dataset.selId;
     const canonicalTarget = bar.dataset.selCanonicalTarget || null;
     if (!target) return msg('Pick a control first.');
@@ -60,11 +70,19 @@ function buildBar() {
     await copyDraftReviewJSON({ targetId: target, canonicalTarget });
     msg(`Copied draft review JSON for ${target}.`);
   };
+  bar.appendChild(dlBtn);
+
+  msgEl = document.createElement('span');
+  msgEl.id = 'ed-msg';
+  bar.appendChild(msgEl);
+
+  document.body.appendChild(bar);
 }
 
 function msg(t, warn=false){
-  const m=bar.querySelector('#ed-msg');
-  m.textContent=t||''; m.className = warn?'warn':'';
+  if (!msgEl) return;
+  msgEl.textContent = t || '';
+  msgEl.className = warn ? 'warn' : '';
 }
 
 function duplicateCheck(newEntry){
@@ -78,6 +96,39 @@ function duplicateCheck(newEntry){
   });
 }
 
+function setSelectedTarget({ targetId, canonicalTarget = null, label = null, source = 'board-click' } = {}){
+  if (!bar || !targetId) return false;
+  bar.dataset.selId = targetId;
+  if (canonicalTarget) bar.dataset.selCanonicalTarget = canonicalTarget;
+  else delete bar.dataset.selCanonicalTarget;
+  if (selEl) {
+    const displayLabel = label || targetId;
+    selEl.textContent = canonicalTarget
+      ? `${displayLabel} · ${canonicalTarget}`
+      : displayLabel;
+  }
+  const svg = document.querySelector('#boardHost svg');
+  if (svg) {
+    if (typeof svg.querySelectorAll === 'function') {
+      svg.querySelectorAll('.editing').forEach((n) => n.classList && n.classList.remove('editing'));
+    }
+    const node = getElByAnyIdIn(svg, targetId);
+    if (node) {
+      if (node.classList) node.classList.add('editing');
+      if (node.style) {
+        node.style.filter = 'drop-shadow(0 0 6px #6ea8fe)';
+        setTimeout(() => { if (node && node.style) node.style.filter = ''; }, 600);
+      }
+    }
+  }
+  if (source === 'debugger') {
+    msg('Selected from debugger. Click Listen, then press the controller input.');
+  } else {
+    msg('Click Listen, then press on your controller.');
+  }
+  return true;
+}
+
 function clickHandler(e){
   if (!on) return;
   const svg = document.querySelector('#boardHost svg');
@@ -86,18 +137,12 @@ function clickHandler(e){
   if (!selection || !selection.targetId) return;
   const node = getElByAnyIdIn(svg, selection.targetId) || e.target.closest('[id]');
   if (!node) return;
-  // Highlight selection
-  svg.querySelectorAll('.editing').forEach(n=>n.classList.remove('editing'));
-  node.classList.add('editing');
-  node.style.filter = 'drop-shadow(0 0 6px #6ea8fe)';
-  setTimeout(()=>{ if(node) node.style.filter=''; }, 600);
-  bar.dataset.selId = selection.targetId;
-  if (selection.canonicalTarget) bar.dataset.selCanonicalTarget = selection.canonicalTarget;
-  else delete bar.dataset.selCanonicalTarget;
-  bar.querySelector('#ed-sel').textContent = selection.canonicalTarget
-    ? `${selection.targetId} · ${selection.canonicalTarget}`
-    : selection.targetId;
-  msg('Click Listen, then press on your controller.');
+  setSelectedTarget({
+    targetId: selection.targetId,
+    canonicalTarget: selection.canonicalTarget || null,
+    label: selection.label || selection.targetId,
+    source: 'board-click',
+  });
 }
 
 export function toggle() {
@@ -119,4 +164,21 @@ export function isOpen() {
   return onState();
 }
 
-if (typeof window!=='undefined') window.EDIT = { toggle, on:onState, show, hide, isOpen };
+export function openForTarget({ targetId, canonicalTarget = null, label = null } = {}) {
+  if (!targetId) return false;
+  buildBar();
+  if (!on) {
+    on = true;
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'flex';
+  }
+  return setSelectedTarget({
+    targetId,
+    canonicalTarget,
+    label: label || targetId,
+    source: 'debugger',
+  });
+}
+
+if (typeof window!=='undefined') window.EDIT = { toggle, on:onState, show, hide, isOpen, openForTarget };

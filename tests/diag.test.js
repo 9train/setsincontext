@@ -300,7 +300,7 @@ test('debugger snapshot builds a focused hardware truth matrix for jog calibrati
   assert.match(whyRow.value, /side-wheel CC motion was received/i);
 });
 
-test('debugger snapshot does not treat bare boardCompat as compatibility ownership', () => {
+test('debugger snapshot reports bare unmapped raw MIDI as unmapped, not unknown or compatibility', () => {
   const snapshot = buildDebuggerEventSnapshot({
     type: 'cc',
     ch: 1,
@@ -327,12 +327,17 @@ test('debugger snapshot does not treat bare boardCompat as compatibility ownersh
     },
   });
 
-  assert.equal(snapshot.binding.status, 'unmatched');
+  assert.equal(snapshot.binding.status, 'unmapped');
   assert.equal(snapshot.render.authority, 'unmapped');
   assert.equal(snapshot.authority.resolutionOwner, 'unknown');
+  assert.equal(snapshot.resolution.mappingSource, 'unmapped');
+  assert.equal(snapshot.authority.renderPath, 'unmapped');
+  assert.equal(snapshot.hardwareTruthMatrix.status, 'unmapped');
+  assert.match(snapshot.resolution.ownerSummary, /No official mapping or render target matched/i);
+  assert.doesNotMatch(snapshot.resolution.ownerSummary || '', /owns/i);
 });
 
-test('debugger snapshot keeps explicit debug targets marked as compatibility', () => {
+test('debugger snapshot presents explicit __flxDebug + __flxDebugTarget as debug-only, not compatibility', () => {
   const snapshot = buildDebuggerEventSnapshot({
     type: 'cc',
     ch: 1,
@@ -343,22 +348,27 @@ test('debugger snapshot keeps explicit debug targets marked as compatibility', (
     __flxDebug: true,
     __flxDebugTarget: 'slider_TEMPO_L',
     _boardRender: {
-      targetId: null,
-      authority: 'unmapped',
-      ownership: 'unknown',
-      source: 'debug-target-preview',
-      fallbackReason: null,
+      targetId: 'slider_TEMPO_L',
+      authority: 'compatibility-render',
+      ownership: 'fallback',
+      source: 'debug-explicit-target',
+      fallbackReason: 'debug-only-visible-control',
       truthStatus: 'unknown',
-      compatibility: false,
+      compatibility: true,
       blocked: false,
-      applied: false,
-      outcome: 'absent',
-      detail: 'no-render-target',
+      applied: true,
+      outcome: 'updated',
+      detail: 'test-applied',
     },
   });
 
-  assert.equal(snapshot.binding.status, 'compatibility');
-  assert.equal(snapshot.authority.bindingStatus, 'compatibility');
+  assert.equal(snapshot.binding.status, 'debug-only');
+  assert.equal(snapshot.authority.bindingStatus, 'debug-only');
+  assert.equal(snapshot.resolution.mappingSource, 'debug-only');
+  assert.equal(snapshot.authority.renderPath, 'debug-only');
+  assert.equal(snapshot.hardwareTruthMatrix.status, 'debug-only');
+  assert.match(snapshot.resolution.ownerSummary, /Debug-only targeting/i);
+  assert.match(snapshot.resolution.whySummary || '', /Debug-only target; not normal render truth/i);
 });
 
 test('diagnostics surface draft candidates without making unknown raw events authoritative', () => {
@@ -590,6 +600,85 @@ test('debugger session presentation frames host readiness, active path, and pinn
   assert.equal(presentation.sections[1].rows[0].value, 'Cue -> cue_L');
   assert.equal(presentation.sections[1].rows[1].value, 'play_L pinned for review');
   assert.match(presentation.sections[1].rows[1].note, /Pinned review anchor: NOTEON noteon:1:11 -> Play -> play_L/);
+});
+
+test('debugger snapshot presents review-only candidates without claiming they own the visible result', () => {
+  const snapshot = buildDebuggerEventSnapshot({
+    type: 'noteon',
+    ch: 1,
+    d1: 77,
+    d2: 127,
+    value: 127,
+    timestamp: 123,
+    _boardRender: {
+      targetId: 'play_L',
+      authority: 'compatibility-render',
+      ownership: 'draft',
+      source: 'compatibility-binding',
+      fallbackReason: null,
+      truthStatus: 'unknown',
+      compatibility: true,
+      blocked: false,
+      applied: true,
+      outcome: 'updated',
+      detail: 'test-applied',
+    },
+  });
+
+  assert.equal(snapshot.resolution.mappingSource, 'review-only');
+  assert.match(snapshot.resolution.ownerSummary, /Candidate data is available for review/i);
+  assert.doesNotMatch(snapshot.resolution.ownerSummary || '', /owns the visible result/i);
+  assert.equal(snapshot.debugTransaction.mappingAuthority.owner, 'review-only');
+  assert.match(snapshot.debugTransaction.mappingAuthority.summary, /Candidate mapping data is available for review/i);
+  assert.doesNotMatch(snapshot.debugTransaction.mappingAuthority.summary, /owns this mapping path/i);
+});
+
+test('inspection presentation labels candidate-only surfaces as review-only without saying they own the surface', () => {
+  const inspection = buildDebuggerBoardInspectionSnapshot('mystery_transport', {
+    mapEntries: [{
+      key: 'noteon:1:77',
+      target: 'mystery_transport',
+      ownership: 'draft',
+      canonicalTarget: 'deck.left.transport.play',
+      type: 'noteon',
+      ch: 1,
+      code: 77,
+      name: 'Mystery Transport',
+    }],
+  });
+  const presentation = buildInspectionPresentationModel(inspection, {
+    inspectionPinned: true,
+    inspectionPinSource: 'recent-event',
+  });
+
+  const mappingsSection = presentation.sections.find((section) => section.title === 'Current Mappings');
+  const authoritativeRow = mappingsSection.rows.find((row) => row.label === 'Authoritative');
+
+  assert.ok(authoritativeRow);
+  assert.match(authoritativeRow.value, /Review-only candidate/i);
+  assert.doesNotMatch(authoritativeRow.note || '', /currently explains this surface/i);
+  assert.match(authoritativeRow.note || '', /does not own this surface/i);
+});
+
+test('debugger snapshot for an official event still reads as official render/profile truth', () => {
+  const state = createControllerState({ profileId: flx6Profile.id });
+  const resolved = resolveFromRaw(createFlx6RawInput({
+    interaction: 'noteon',
+    channel: 1,
+    code: 11,
+    value: 127,
+    data1: 11,
+    data2: 127,
+    key: 'noteon:1:11',
+    bytes: [0x90, 11, 127],
+  }), state);
+  const snapshot = buildDebuggerEventSnapshot(attachBoardRender(resolved));
+
+  assert.equal(snapshot.binding.status, 'official');
+  assert.equal(snapshot.resolution.mappingSource, 'official');
+  assert.equal(snapshot.authority.renderPath, 'official');
+  assert.equal(snapshot.hardwareTruthMatrix.status, 'official');
+  assert.match(snapshot.resolution.ownerSummary, /Official FLX6 profile truth owns this resolution/i);
 });
 
 test('basic diagnostics turn an official live event into a plain-English explanation card', () => {

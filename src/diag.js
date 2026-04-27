@@ -12,6 +12,7 @@ import {
 import { getElByAnyIdIn } from './controllers/core/ui.js';
 import {
   humanizeIdentifier,
+  humanizeRenderReason,
   joinNotes,
   statusTone,
 } from './event-log-snapshot.js';
@@ -467,6 +468,38 @@ function renderInspection() {
   inspectEl.appendChild(createPresentationCard(presentation, {
     buildActions: () => {
       const actionRow = createText('div', null, '', 'diag-action-row');
+
+      const editLearnButton = createButton('Edit / Learn This Surface');
+      editLearnButton.dataset.diagAction = 'edit-learn-surface';
+      editLearnButton.disabled = !inspection.targetId;
+      if (editLearnButton.disabled) {
+        editLearnButton.style.opacity = '.55';
+        editLearnButton.style.cursor = 'not-allowed';
+        editLearnButton.title = 'Select a board surface to edit or learn it.';
+      } else {
+        editLearnButton.title = 'Open Edit Mode with this surface preselected. Listen still has to be clicked there.';
+        editLearnButton.addEventListener('click', async () => {
+          try {
+            const editModule = await import('./editmode.js');
+            const opened = typeof editModule.openForTarget === 'function'
+              ? editModule.openForTarget({
+                  targetId: inspection.targetId,
+                  canonicalTarget: inspection.canonicalTarget || null,
+                  label: inspection.label || inspection.targetId,
+                })
+              : false;
+            if (opened) {
+              showPop(`Opened Edit Mode for ${inspection.targetId}. Click Listen, then press the controller input.`);
+            } else {
+              showPop(`Could not open Edit Mode for ${inspection.targetId}.`);
+            }
+          } catch (error) {
+            showPop(`Edit Mode bridge failed: ${error && error.message ? error.message : 'unknown error'}`);
+          }
+        });
+      }
+      actionRow.appendChild(editLearnButton);
+
       const copyReviewButton = createButton('Copy Draft Review JSON');
       copyReviewButton.disabled = inspection.compatibilityMappings.length === 0;
       if (copyReviewButton.disabled) {
@@ -547,7 +580,7 @@ function renderLatest(snapshot = getLatestSnapshot()) {
       badges: [{ label: snapshot.render.outcomeLabel, status: snapshot.render.outcome }],
       note: joinNotes([
         snapshot.render.detail,
-        snapshot.render.fallbackReason,
+        humanizeRenderReason(snapshot.render.fallbackReason),
       ]),
     },
     {
@@ -843,9 +876,9 @@ function renderLatest(snapshot = getLatestSnapshot()) {
       badges: [{ label: snapshot.authority.resolutionOwner, status: snapshot.authority.resolutionOwner }],
     },
     {
-      label: 'Compatibility',
-      value: humanizeIdentifier(snapshot.authority.compatibility),
-      badges: [{ label: snapshot.authority.compatibility, status: snapshot.authority.compatibility }],
+      label: 'Render Path',
+      value: humanizeIdentifier(snapshot.authority.renderPath),
+      badges: [{ label: snapshot.authority.renderPath, status: snapshot.authority.renderPath }],
     },
   ]);
   technicalDisclosure.appendChild(authoritySection);

@@ -107,7 +107,7 @@ function buildInspectionContextRows(inspection, inspectionPinned, inspectionPinS
     },
     {
       label: 'How To Read',
-      value: 'Live truth explains the newest event path; selected-surface review explains what currently owns this board surface.',
+      value: 'Live truth shows the newest event path; selected-surface review shows what currently owns this board surface (and any review-only candidates).',
     },
   ];
 }
@@ -196,26 +196,26 @@ function buildCurrentMappingRows(inspection, maxEntries) {
     value: inspection.officialSource.status === 'official'
       ? `${inspection.officialSource.canonicalTarget || inspection.officialSource.targetId} -> ${inspection.officialSource.targetId}`
       : inspection.compatibilityMappings.length
-        ? 'Compatibility-only provisional mapping'
+        ? 'Review-only candidate data; no official owner'
         : 'No attached mapping',
     mono: inspection.officialSource.status === 'official',
     badges: [{
       label: inspection.officialSource.status === 'official'
         ? 'official profile'
         : inspection.compatibilityMappings.length
-          ? 'compatibility only'
+          ? 'review-only'
           : 'unmapped',
       status: inspection.officialSource.status === 'official'
         ? 'official'
         : inspection.compatibilityMappings.length
-          ? 'fallback'
-          : 'unknown',
+          ? 'review-only'
+          : 'unmapped',
     }],
     note: inspection.officialSource.status === 'official'
       ? 'Official FLX6 surface truth is the active owner for this selection.'
       : inspection.compatibilityMappings.length
-        ? 'Only provisional draft/fallback data currently explains this surface.'
-        : 'No official or provisional mapping currently owns this surface.',
+        ? 'Candidate data is available for review; it does not own this surface.'
+        : 'No official or candidate mapping is attached to this surface.',
   });
 
   let draftIndex = 0;
@@ -372,7 +372,7 @@ function buildSafeNextStepRows(inspection) {
   return [
     {
       label: 'Now',
-      value: 'Inspect a live event or capture a draft; no current owner explains this surface yet.',
+      value: 'Inspect a live event or capture a draft; no current owner is attached to this surface yet.',
     },
     {
       label: 'Keep Safe',

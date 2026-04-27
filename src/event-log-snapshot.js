@@ -63,6 +63,8 @@ function normalizeStatus(value, fallback = 'unknown') {
 export function statusTone(value) {
   const text = normalizeStatus(value);
   if (text.startsWith('official')) return TONE_BY_STATUS.official;
+  if (text === 'review-only' || text === 'candidate') return TONE_BY_STATUS.draft;
+  if (text === 'debug-only') return TONE_BY_STATUS.compatibility;
   if (text.startsWith('draft')) return TONE_BY_STATUS.draft;
   if (text.startsWith('fallback')) return TONE_BY_STATUS.fallback;
   if (text.startsWith('compatibility')) return TONE_BY_STATUS.compatibility;
@@ -436,12 +438,34 @@ function buildEventContextSnapshot(binding, semantic, info) {
 }
 
 function deriveResolutionSource(bindingStatus, boardRender) {
+  if (bindingStatus === 'debug-only') return 'debug-only';
+  if (bindingStatus === 'review-only') return 'review-only';
   const ownership = normalizeStatus(boardRender && boardRender.ownership, null);
-  if (ownership) return ownership;
+  if (ownership === 'official') return 'official';
+  if (ownership === 'draft' || ownership === 'fallback') return 'review-only';
   if (bindingStatus === 'official') return 'official';
-  if (bindingStatus === 'compatibility') return 'fallback';
-  return 'unknown';
+  return 'unmapped';
 }
+
+const RENDER_REASON_PHRASES = Object.freeze({
+  'debug-only-visible-control': 'Debug-only target; not normal render truth.',
+  'official-render-target-required': 'No official render target matched this input.',
+  'official-render-blocked': 'Official render is currently blocked.',
+  'official-meaning-without-render-target': 'Official meaning has no board render target.',
+  'physical-crossfader-truth-required': 'Physical crossfader truth required.',
+  'resolved-render-target-required': 'No resolved render target matched this input.',
+  'no-render-target': 'No board render target was resolved.',
+});
+
+function humanizeRenderReason(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (RENDER_REASON_PHRASES[text]) return RENDER_REASON_PHRASES[text];
+  if (RENDER_REASON_PHRASES[text.toLowerCase()]) return RENDER_REASON_PHRASES[text.toLowerCase()];
+  return humanizeIdentifier(text);
+}
+
+export { humanizeRenderReason };
 
 function describeResolutionPath({
   binding,
@@ -472,9 +496,14 @@ function describeResolutionPath({
   }
 
   if (targetId) {
-    steps.push(`${boardRender.compatibility ? 'board compatibility' : 'board render'} ${targetId}`);
+    const targetLabel = mappingSource === 'debug-only'
+      ? 'debug-only board target'
+      : mappingSource === 'review-only'
+        ? 'review-only board target'
+        : 'board render';
+    steps.push(`${targetLabel} ${targetId}`);
   } else if (boardRender && boardRender.blocked) {
-    steps.push(boardRender.fallbackReason || boardRender.source || 'render blocked');
+    steps.push(humanizeRenderReason(boardRender.fallbackReason) || boardRender.source || 'render blocked');
   } else {
     steps.push('no visible board target');
   }
@@ -482,10 +511,12 @@ function describeResolutionPath({
   let ownerSummary = 'No resolution owner available.';
   if (mappingSource === 'official') {
     ownerSummary = 'Official FLX6 profile truth owns this resolution.';
-  } else if (mappingSource === 'draft') {
-    ownerSummary = 'A draft/learned compatibility mapping owns the visible board result.';
-  } else if (mappingSource === 'fallback') {
-    ownerSummary = 'A fallback compatibility mapping owns the visible board result.';
+  } else if (mappingSource === 'review-only') {
+    ownerSummary = 'Candidate data is available for review and does not own the visible result.';
+  } else if (mappingSource === 'debug-only') {
+    ownerSummary = 'Explicit debug-only targeting; not normal render truth.';
+  } else if (mappingSource === 'unmapped') {
+    ownerSummary = 'No official mapping or render target matched this input.';
   }
 
   return Object.freeze({
@@ -498,7 +529,7 @@ function describeResolutionPath({
     whySummary: joinNotes([
       binding && binding.note,
       boardRender && boardRender.detail,
-      boardRender && boardRender.fallbackReason,
+      humanizeRenderReason(boardRender && boardRender.fallbackReason),
       boardRender && boardRender.source && boardRender.source !== 'unknown'
         ? `source ${boardRender.source}`
         : null,
@@ -509,13 +540,15 @@ function describeResolutionPath({
 function deriveBindingStatus(info, binding, boardRender) {
   if (binding && (binding.id || binding.canonicalTarget)) return 'official';
   if (info && (info.mappingId || info.canonicalTarget)) return 'official';
-  if (boardRender && (boardRender.compatibility || String(boardRender.authority || '').startsWith('compatibility'))) {
-    return 'compatibility';
-  }
   if (info && info.__flxDebug === true && String(info.__flxDebugTarget || '').trim()) {
-    return 'compatibility';
+    return 'debug-only';
   }
-  return 'unmatched';
+  const renderOwnership = normalizeStatus(boardRender && boardRender.ownership, null);
+  if (renderOwnership === 'draft' || renderOwnership === 'fallback') return 'review-only';
+  if (boardRender && (boardRender.compatibility || String(boardRender.authority || '').startsWith('compatibility'))) {
+    return 'debug-only';
+  }
+  return 'unmapped';
 }
 
 function deriveBindingFamily(binding, semantic, info) {
@@ -579,9 +612,11 @@ function formatOutcomeLabel(outcome) {
 }
 
 function normalizeMappingAuthority(value) {
-  const text = normalizeStatus(value, 'unknown');
-  if (text === 'official' || text === 'draft' || text === 'fallback') return text;
-  return 'unknown';
+  const text = normalizeStatus(value, 'unmapped');
+  if (text === 'official' || text === 'review-only' || text === 'debug-only' || text === 'unmapped') return text;
+  if (text === 'draft' || text === 'fallback') return 'review-only';
+  if (text === 'unknown') return 'unmapped';
+  return 'unmapped';
 }
 
 function summarizeControllerStateRows(rows = []) {
@@ -690,8 +725,9 @@ function buildMappingAuthoritySnapshot(resolution, render) {
   const owner = normalizeMappingAuthority(resolution && resolution.mappingSource);
   let summary = 'Mapping authority is unknown.';
   if (owner === 'official') summary = 'Official FLX6 profile truth owns this mapping path.';
-  if (owner === 'draft') summary = 'Draft/learned compatibility mapping owns this mapping path.';
-  if (owner === 'fallback') summary = 'Fallback compatibility mapping owns this mapping path.';
+  if (owner === 'review-only') summary = 'Candidate mapping data is available for review and does not own this mapping path.';
+  if (owner === 'debug-only') summary = 'Explicit debug-only targeting; not normal mapping truth.';
+  if (owner === 'unmapped') summary = 'No official mapping matched this input.';
 
   return Object.freeze({
     owner,
@@ -849,14 +885,15 @@ function resolveHardwareTruthMatrixStatus(snapshot, jog) {
   if (jog && jog.calibration && (jog.calibration.ignored || jog.calibration.waiting)) return 'blocked';
   if (snapshot && snapshot.render && snapshot.render.blocked) return 'blocked';
   const mappingSource = normalizeMappingAuthority(snapshot && snapshot.resolution && snapshot.resolution.mappingSource);
-  if (mappingSource === 'draft' || mappingSource === 'fallback') return mappingSource;
+  if (mappingSource === 'review-only' || mappingSource === 'debug-only') return mappingSource;
   const mapped = !!(
     snapshot
     && snapshot.normalized
     && (snapshot.normalized.mapped || snapshot.normalized.mappingId || snapshot.normalized.canonicalTarget)
   );
   if (!mapped && !(snapshot && snapshot.render && snapshot.render.targetId)) return 'unmapped';
-  if (snapshot && snapshot.binding && snapshot.binding.status === 'unmatched' && !(snapshot.render && snapshot.render.targetId)) {
+  const bindingStatus = snapshot && snapshot.binding && snapshot.binding.status;
+  if ((bindingStatus === 'unmapped' || bindingStatus === 'unmatched') && !(snapshot.render && snapshot.render.targetId)) {
     return 'unmapped';
   }
   return 'official';
@@ -868,7 +905,7 @@ function resolveHardwareTruthMatrixReason(snapshot, jog) {
   if (snapshot && snapshot.render && snapshot.render.blocked) {
     return joinNotes([
       snapshot.render.detail,
-      snapshot.render.fallbackReason,
+      humanizeRenderReason(snapshot.render.fallbackReason),
     ]) || 'The board render did not apply to this event.';
   }
   const mapped = !!(
@@ -1136,7 +1173,7 @@ function buildDebugTransactionSnapshot(snapshot, runtimeStatus = {}) {
             ? 'board not updated'
             : 'board update unknown',
         snapshot && snapshot.render && snapshot.render.detail || null,
-        snapshot && snapshot.render && snapshot.render.fallbackReason || null,
+        humanizeRenderReason(snapshot && snapshot.render && snapshot.render.fallbackReason),
       ]) || 'Render result unavailable.',
     }),
     mappingAuthority,
@@ -1291,7 +1328,13 @@ export function buildDebuggerEventSnapshot(info, options = {}) {
       bindingStatus,
       renderAuthority: boardRender.authority,
       resolutionOwner: boardRender.ownership,
-      compatibility: boardRender.compatibility ? 'compatibility' : 'official',
+      renderPath: bindingStatus === 'debug-only'
+        ? 'debug-only'
+        : bindingStatus === 'review-only'
+          ? 'review-only'
+          : bindingStatus === 'official'
+            ? 'official'
+            : 'unmapped',
       blocked: boardRender.blocked ? 'blocked' : 'clear',
     }),
     context: eventContext,

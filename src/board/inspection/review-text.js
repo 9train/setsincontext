@@ -155,8 +155,8 @@ export function buildInspectableMappingReviewPresentation({
   const authoritativeSummary = officialSource && officialSource.status === OFFICIAL_RENDER_OWNERSHIP
     ? 'Official FLX6 UI/render metadata currently owns this board surface.'
     : firstCompatibility
-      ? `${describeCompatibilityReviewStatus(firstCompatibility.reviewStatus)} currently explains this surface through ${firstCompatibility.ownership} compatibility data.`
-      : 'No official or compatibility mapping currently owns this board surface.';
+      ? `${describeCompatibilityReviewStatus(firstCompatibility.reviewStatus)} candidate data is available for review through ${firstCompatibility.ownership} compatibility data; it does not own this surface.`
+      : 'No official or candidate mapping is attached to this board surface.';
   const provisionalSummary = compatibilityMappings.length
     ? `${summary.shadowing} shadowing | ${summary.competing} competing | ${summary.supplementary} supplementary | ${summary.compatibilityOwner} compatibility-only`
     : 'No provisional draft or fallback claims overlap this surface.';
