@@ -300,37 +300,6 @@ test('debugger snapshot builds a focused hardware truth matrix for jog calibrati
   assert.match(whyRow.value, /side-wheel CC motion was received/i);
 });
 
-test('debugger snapshot labels draft compatibility render ownership explicitly', () => {
-  const renderPlan = resolveInfoRenderPlan(
-    { type: 'noteon', ch: 1, d1: 11, d2: 127, value: 127 },
-    [{ key: 'noteon:1:11', target: 'play_L', ownership: 'draft' }],
-    { allowLegacyMapFallback: true },
-  );
-
-  const snapshot = buildDebuggerEventSnapshot({
-    type: 'noteon',
-    ch: 1,
-    d1: 11,
-    d2: 127,
-    value: 127,
-    _boardRender: {
-      ...renderPlan,
-      applied: true,
-      outcome: 'updated',
-      detail: 'test-applied',
-    },
-  });
-
-  assert.equal(snapshot.render.authority, 'compatibility-raw');
-  assert.equal(snapshot.render.ownership, 'draft');
-  assert.equal(snapshot.authority.resolutionOwner, 'draft');
-  assert.equal(snapshot.resolution.mappingSource, 'draft');
-  assert.match(snapshot.resolution.ownerSummary, /draft\/learned compatibility mapping/i);
-  assert.match(snapshot.resolution.pathSummary, /board compatibility play_L/);
-  assert.equal(snapshot.debugTransaction.mapping.officialId, null);
-  assert.equal(snapshot.debugTransaction.mappingAuthority.owner, 'draft');
-});
-
 test('debugger snapshot does not treat bare boardCompat as compatibility ownership', () => {
   const snapshot = buildDebuggerEventSnapshot({
     type: 'cc',

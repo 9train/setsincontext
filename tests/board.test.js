@@ -335,37 +335,6 @@ test('default FLX6 board resolution requires an official resolved render target 
   assert.strictEqual(resolveInfoRenderTarget(info, rawMap), null);
 });
 
-test('legacy canonical board resolution is isolated behind an explicit compatibility opt-in', () => {
-  const rawMap = [{ key: 'cc:9:99', target: 'slider_ch4' }];
-  const info = {
-    canonicalTarget: 'mixer.channel.1.fader',
-    mappingId: 'mixer.channel.1.fader.primary',
-    type: 'cc',
-    ch: 9,
-    controller: 99,
-    value: 64,
-  };
-
-  assert.deepEqual(resolveInfoRenderPlan(info, rawMap, { allowLegacyMapFallback: true }), {
-    targetId: 'slider_ch1',
-    authority: 'compatibility-canonical',
-    source: 'legacy-map-compatibility',
-    fallbackReason: 'explicit-legacy-canonical-compatibility',
-    canonicalTarget: 'mixer.channel.1.fader',
-    mappingId: 'mixer.channel.1.fader.primary',
-    context: null,
-    profileId: null,
-    ownership: 'fallback',
-    fallback: true,
-    compatibility: true,
-    blocked: false,
-  });
-  assert.strictEqual(
-    resolveInfoRenderTarget(info, rawMap, { allowLegacyMapFallback: true }),
-    'slider_ch1',
-  );
-});
-
 test('board target resolution honors an explicit resolved render target before canonical fallback', () => {
   const rawMap = [{ key: 'noteon:3:60', target: 'pad_L_1' }];
   const info = {
@@ -422,7 +391,7 @@ test('blocked official render results stay authoritative instead of rehydrating 
   assert.strictEqual(resolveInfoRenderTarget(info, rawMap), null);
 });
 
-test('explicit compatibility canonical resolution still beats corrupted raw learned-map entries', () => {
+test('default board resolution ignores canonical fallback candidates even when learned maps suggest conflicting targets', () => {
   const badMap = [
     { key: 'cc:7:31', target: 'jog_R' },
     { key: 'cc:1:33', target: 'xfader_slider' },
@@ -435,7 +404,7 @@ test('explicit compatibility canonical resolution still beats corrupted raw lear
     ch: 7,
     controller: 31,
     value: 64,
-  }, badMap, { allowLegacyMapFallback: true }), 'xfader_slider');
+  }, badMap), null);
 
   assert.strictEqual(resolveInfoRenderTarget({
     canonicalTarget: 'deck.left.jog.motion',
@@ -444,7 +413,7 @@ test('explicit compatibility canonical resolution still beats corrupted raw lear
     ch: 1,
     controller: 33,
     value: 65,
-  }, badMap, { allowLegacyMapFallback: true }), 'jog_L');
+  }, badMap), null);
 });
 
 test('bare boardCompat no longer becomes render authority for jog motion', () => {
@@ -521,7 +490,7 @@ test('jog touch and jog cutter compatibility targets cannot resolve to the physi
   });
 });
 
-test('raw learned-map crossfader compatibility is blocked for non-crossfader lanes but preserved for the official MSB/LSB pair', () => {
+test('default board resolution ignores raw learned-map crossfader candidates on both unofficial and official lanes', () => {
   const badMap = [{ key: 'cc:1:33', target: 'xfader_slider' }];
 
   assert.deepEqual(resolveInfoRenderPlan({
@@ -531,19 +500,19 @@ test('raw learned-map crossfader compatibility is blocked for non-crossfader lan
     d1: 33,
     d2: 65,
     value: 65,
-  }, badMap, { allowLegacyMapFallback: true }), {
+  }, badMap), {
     targetId: null,
-    authority: 'compatibility-raw',
-    source: 'unsafe-crossfader-render-blocked',
-    fallbackReason: 'physical-crossfader-truth-required',
+    authority: 'unmapped',
+    source: 'unmapped',
+    fallbackReason: null,
     canonicalTarget: null,
     mappingId: null,
     context: null,
     profileId: null,
-    ownership: 'fallback',
-    fallback: true,
-    compatibility: true,
-    blocked: true,
+    ownership: 'unknown',
+    fallback: false,
+    compatibility: false,
+    blocked: false,
   });
 
   const goodMap = [
@@ -558,7 +527,7 @@ test('raw learned-map crossfader compatibility is blocked for non-crossfader lan
     d1: 31,
     d2: 64,
     value: 64,
-  }, goodMap, { allowLegacyMapFallback: true }), 'xfader_slider');
+  }, goodMap), null);
 
   assert.strictEqual(resolveInfoRenderTarget({
     type: 'cc',
@@ -567,7 +536,7 @@ test('raw learned-map crossfader compatibility is blocked for non-crossfader lan
     d1: 63,
     d2: 32,
     value: 32,
-  }, goodMap, { allowLegacyMapFallback: true }), 'xfader_slider');
+  }, goodMap), null);
 });
 
 test('default FLX6 board resolution ignores raw learned-map targets with no official render ownership', () => {
@@ -589,50 +558,6 @@ test('default FLX6 board resolution ignores raw learned-map targets with no offi
     blocked: false,
   });
   assert.strictEqual(resolveInfoRenderTarget(info, rawMap), null);
-});
-
-test('explicit compatibility mode can still resolve raw learned-map targets for debug-only use', () => {
-  const rawMap = [{ key: 'noteon:1:11', target: 'play_L' }];
-  const info = { type: 'noteon', ch: 1, d1: 11, d2: 127, value: 127 };
-
-  assert.deepEqual(resolveInfoRenderPlan(info, rawMap, { allowLegacyMapFallback: true }), {
-    targetId: 'play_L',
-    authority: 'compatibility-raw',
-    source: 'legacy-map-compatibility',
-    fallbackReason: 'explicit-legacy-raw-compatibility',
-    canonicalTarget: null,
-    mappingId: null,
-    context: null,
-    profileId: null,
-    ownership: 'fallback',
-    fallback: true,
-    compatibility: true,
-    blocked: false,
-  });
-  assert.strictEqual(
-    resolveInfoRenderTarget(info, rawMap, { allowLegacyMapFallback: true }),
-    'play_L',
-  );
-});
-
-test('draft learned-map compatibility stays visibly draft when explicitly enabled', () => {
-  const rawMap = [{ key: 'noteon:1:11', target: 'play_L', ownership: 'draft' }];
-  const info = { type: 'noteon', ch: 1, d1: 11, d2: 127, value: 127 };
-
-  assert.deepEqual(resolveInfoRenderPlan(info, rawMap, { allowLegacyMapFallback: true }), {
-    targetId: 'play_L',
-    authority: 'compatibility-raw',
-    source: 'legacy-map-compatibility',
-    fallbackReason: 'explicit-legacy-raw-compatibility',
-    canonicalTarget: null,
-    mappingId: null,
-    context: null,
-    profileId: null,
-    ownership: 'draft',
-    fallback: true,
-    compatibility: true,
-    blocked: false,
-  });
 });
 
 test('localStorage learned maps stay draft diagnostic-only even if they claim official ownership', () => {
@@ -672,11 +597,6 @@ test('localStorage learned maps stay draft diagnostic-only even if they claim of
       compatibility: false,
       blocked: false,
     });
-
-    const compatibilityPlan = resolveInfoRenderPlan(rawInfo, learnedMap, { allowLegacyMapFallback: true });
-    assert.equal(compatibilityPlan.targetId, 'play_L');
-    assert.equal(compatibilityPlan.authority, 'compatibility-raw');
-    assert.equal(compatibilityPlan.ownership, 'draft');
 
     const inspection = inspectBoardTarget('play_L', learnedMap);
     assert.equal(inspection.officialSource.status, 'official');

@@ -4,7 +4,6 @@ import {
   OFFICIAL_RENDER_OWNERSHIP,
   UNKNOWN_RENDER_OWNERSHIP,
   hasOwn,
-  infoKey,
   normalizeCompatibilityOwnership,
   normalizeRenderOwnership,
 } from './map-store.js';
@@ -74,30 +73,6 @@ function getOfficialRenderResolution(info) {
   };
 }
 
-function findEntryByCanonicalInfo(info) {
-  if (!info || typeof info !== 'object') return null;
-  const target = resolveCanonicalRenderTargetId(info.canonicalTarget, info.mappingId);
-  if (!target) return null;
-  return {
-    target,
-    canonicalTarget: info.canonicalTarget || inferCanonicalTargetFromMappingId(info.mappingId) || null,
-    mappingId: info.mappingId || null,
-    context: info.context || null,
-    profileId: info.profileId || null,
-  };
-}
-
-function findEntryByRawInfo(info, mapEntries = getUnifiedMapEntries()) {
-  const key = infoKey(info);
-  return (mapEntries || []).find((entry) =>
-    (entry.key && entry.key === key && entry.target)
-    || (!entry.key && entry.type === (info.type || '').toLowerCase()
-      && entry.ch === info.ch
-      && entry.code === (info.controller ?? info.d1)
-      && entry.target)
-  ) || null;
-}
-
 function findOfficialMeaningHint(info) {
   if (!info || typeof info !== 'object') return null;
   const canonicalTarget = info.canonicalTarget
@@ -158,12 +133,6 @@ function describeMissingOfficialRender(info) {
       ? 'official-render-target-required'
       : 'official-meaning-without-render-target',
   };
-}
-
-function allowLegacyMapCompatibility(options) {
-  // Diagnostic/debug escape hatch only. Normal host/viewer runtime must stay on
-  // official render payloads and explicit debug targets, never raw learned maps.
-  return !!(options && options.allowLegacyMapFallback === true);
 }
 
 function deriveRenderPlanOwnership(authority, entry, explicitOwnership = null) {
@@ -271,7 +240,7 @@ function createProtectedRenderPlan(info, options = {}) {
   return protectPhysicalCrossfaderRender(info, createRenderPlan(options));
 }
 
-export function resolveInfoRenderPlan(info, mapEntries = getUnifiedMapEntries(), options = {}) {
+export function resolveInfoRenderPlan(info, _mapEntries = getUnifiedMapEntries()) {
   const officialEntry = findEntryByResolvedInfo(info);
   if (officialEntry) {
     return createProtectedRenderPlan(info, {
@@ -306,19 +275,6 @@ export function resolveInfoRenderPlan(info, mapEntries = getUnifiedMapEntries(),
     });
   }
 
-  if (allowLegacyMapCompatibility(options)) {
-    const canonicalEntry = findEntryByCanonicalInfo(info);
-    if (canonicalEntry) {
-      return createProtectedRenderPlan(info, {
-        targetId: canonicalEntry.target,
-        authority: 'compatibility-canonical',
-        source: 'legacy-map-compatibility',
-        fallbackReason: 'explicit-legacy-canonical-compatibility',
-        entry: canonicalEntry,
-      });
-    }
-  }
-
   const missingOfficialRender = describeMissingOfficialRender(info);
   if (missingOfficialRender) {
     return createProtectedRenderPlan(info, {
@@ -330,24 +286,11 @@ export function resolveInfoRenderPlan(info, mapEntries = getUnifiedMapEntries(),
     });
   }
 
-  if (allowLegacyMapCompatibility(options)) {
-    const rawEntry = findEntryByRawInfo(info, mapEntries);
-    if (rawEntry) {
-      return createProtectedRenderPlan(info, {
-        targetId: rawEntry.target,
-        authority: 'compatibility-raw',
-        source: 'legacy-map-compatibility',
-        fallbackReason: 'explicit-legacy-raw-compatibility',
-        entry: rawEntry,
-      });
-    }
-  }
-
   return createProtectedRenderPlan(info);
 }
 
-export function resolveInfoRenderTarget(info, mapEntries = getUnifiedMapEntries(), options = {}) {
-  return resolveInfoRenderPlan(info, mapEntries, options).targetId;
+export function resolveInfoRenderTarget(info, mapEntries = getUnifiedMapEntries()) {
+  return resolveInfoRenderPlan(info, mapEntries).targetId;
 }
 
 function setBoardRenderInfo(info, boardRender) {
