@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setImmediate as waitForTurn } from 'node:timers/promises';
 
 import { resolveInfoRenderPlan } from '../src/board.js';
+import { initHostWSBootstrap } from '../src/runtime/host-ws-bootstrap.js';
 import { installMockBrowser } from './browser-test-helpers.js';
 
 let importCounter = 0;
@@ -11,6 +12,13 @@ async function importFresh(relativePath) {
   const url = new URL(relativePath, import.meta.url);
   url.searchParams.set('test', String(++importCounter));
   return import(url.href);
+}
+
+function keyOf(mapArr) {
+  const s = JSON.stringify(mapArr || []);
+  let h = 5381;
+  for (let i = 0; i < s.length; i += 1) h = ((h << 5) + h) ^ s.charCodeAt(i);
+  return String(h >>> 0);
 }
 
 function createFakeWebSocketHarness() {
@@ -69,6 +77,148 @@ function createFakeWebSocketHarness() {
 
   return { FakeWebSocket, sockets };
 }
+
+test('initHostWSBootstrap sets host relay runtime, forwards connect options, and exposes handles', () => {
+  const calls = [];
+  const seenInfo = [];
+  const seenStatus = [];
+  const relayRuntime = [];
+  const wsClients = [];
+  const wsClient = { id: 'host-ws-client' };
+  const runtimeApp = {
+    consumeInfo(info) {
+      seenInfo.push(info);
+    },
+    setWSStatus(status) {
+      seenStatus.push(status);
+    },
+    setRelayRuntime(details) {
+      relayRuntime.push(details);
+      return details;
+    },
+    setWSClient(client) {
+      wsClients.push(client);
+      return client;
+    },
+  };
+  const sessionMeta = {
+    mode: 'remote',
+    visibility: 'public',
+    sessionTitle: 'Warehouse Warmup',
+    hostName: 'Rafa',
+  };
+
+  const result = initHostWSBootstrap({
+    dependencies: {
+      resolveBootWSURL() {
+        return 'ws://host.test';
+      },
+      getBootRoom() {
+        return 'alpha';
+      },
+      getBootSessionMetadata() {
+        return sessionMeta;
+      },
+      getBootAccessTokens() {
+        return { hostAccessToken: 'host-secret', accessToken: 'viewer-token' };
+      },
+      getRuntimeApp() {
+        return runtimeApp;
+      },
+      acceptDraftMapCandidate() {
+        throw new Error('acceptDraftMapCandidate should not be called during setup');
+      },
+      connectWS(options) {
+        calls.push(options);
+        return wsClient;
+      },
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(relayRuntime, [{ role: 'host', room: 'alpha', url: 'ws://host.test' }]);
+  assert.deepEqual(wsClients, [wsClient]);
+  assert.deepEqual(result, {
+    wsClient,
+    runtimeApp,
+    room: 'alpha',
+    wsURL: 'ws://host.test',
+  });
+
+  const [options] = calls;
+  assert.deepEqual(options.sessionMeta, sessionMeta);
+  assert.equal(options.url, 'ws://host.test');
+  assert.equal(options.role, 'host');
+  assert.equal(options.room, 'alpha');
+  assert.equal(options.hostAccessToken, 'host-secret');
+  assert.equal(Object.hasOwn(options, 'accessToken'), false);
+
+  const info = { type: 'controller_event' };
+  options.onInfo(info);
+  options.onStatus('connected');
+  assert.deepEqual(seenInfo, [info]);
+  assert.deepEqual(seenStatus, ['connected']);
+});
+
+test('initHostWSBootstrap accepts room map sync only as draft metadata with unchanged key behavior', () => {
+  const acceptCalls = [];
+  const remoteMap = [{ key: 'cc:1:11', target: 'jog_R' }];
+  let connectOptions = null;
+
+  initHostWSBootstrap({
+    dependencies: {
+      resolveBootWSURL() {
+        return 'ws://host.test';
+      },
+      getBootRoom() {
+        return 'alpha';
+      },
+      getBootSessionMetadata() {
+        return {};
+      },
+      getBootAccessTokens() {
+        return { hostAccessToken: null };
+      },
+      getRuntimeApp() {
+        return null;
+      },
+      acceptDraftMapCandidate(map, metadata) {
+        acceptCalls.push({ map, metadata });
+        return true;
+      },
+      connectWS(options) {
+        connectOptions = options;
+        return { id: 'host-ws-client' };
+      },
+    },
+  });
+
+  connectOptions.onMessage({ type: 'map:sync', room: 'beta', map: remoteMap, key: 'remote-1' });
+  connectOptions.onMessage({ type: 'map:sync', map: remoteMap, mapState: 'review' });
+  connectOptions.onMessage({ type: 'map:sync', map: null });
+  connectOptions.onMessage({ type: 'probe', map: remoteMap });
+
+  assert.deepEqual(acceptCalls, [
+    {
+      map: remoteMap,
+      metadata: {
+        source: 'server-room-draft-map',
+        state: 'provisional',
+        key: 'remote-1',
+        room: 'beta',
+      },
+    },
+    {
+      map: remoteMap,
+      metadata: {
+        source: 'server-room-draft-map',
+        state: 'review',
+        key: keyOf(remoteMap),
+        room: 'alpha',
+      },
+    },
+  ]);
+});
 
 test('host bootstrap does not seed room truth from static fallback maps', async () => {
   const fallbackMap = [{ key: 'cc:1:77', target: 'jog_L' }];
