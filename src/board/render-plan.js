@@ -240,6 +240,10 @@ function createProtectedRenderPlan(info, options = {}) {
   return protectPhysicalCrossfaderRender(info, createRenderPlan(options));
 }
 
+// _mapEntries is accepted but intentionally not read: render authority comes solely from
+// official controller-resolved fields on info (render.targetId, resolvedRenderTarget).
+// Keeping the parameter prevents call-site breakage while ensuring no raw/draft map
+// entries can silently become render authority via this path.
 export function resolveInfoRenderPlan(info, _mapEntries = getUnifiedMapEntries()) {
   const officialEntry = findEntryByResolvedInfo(info);
   if (officialEntry) {
