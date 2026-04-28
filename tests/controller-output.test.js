@@ -446,6 +446,209 @@ test('buildFlx6OutputMessages resolves all four mixer channel cue LEDs', () => {
   ]);
 });
 
+test('buildFlx6OutputMessages resolves Beat FX unit 1 slot 1 on/off LED (FX1-1)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+    context: { unit: 1, slot: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 100,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 5, code: 71, key: 'noteon:5:71' },
+    canonicalTarget: 'beatfx.on_off',
+    context: { unit: 1, slot: 1 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.on_off.unit1.slot1.led',
+    timestamp: 100,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 1 slot 2 on/off LED (FX1-2)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+    context: { unit: 1, slot: 2 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 101,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 5, code: 72, key: 'noteon:5:72' },
+    canonicalTarget: 'beatfx.on_off',
+    context: { unit: 1, slot: 2 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.on_off.unit1.slot2.led',
+    timestamp: 101,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 1 slot 3 on/off LED (FX1-3)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: false,
+    context: { unit: 1, slot: 3 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 102,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 5, code: 73, key: 'noteon:5:73' },
+    canonicalTarget: 'beatfx.on_off',
+    context: { unit: 1, slot: 3 },
+    value: 0,
+    outputKind: 'light',
+    bindingId: 'beatfx.on_off.unit1.slot3.led',
+    timestamp: 102,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 2 slot 1 on/off LED (FX2-1)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+    context: { unit: 2, slot: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 103,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 6, code: 71, key: 'noteon:6:71' },
+    canonicalTarget: 'beatfx.on_off',
+    context: { unit: 2, slot: 1 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.on_off.unit2.slot1.led',
+    timestamp: 103,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 2 slot 2 on/off LED (FX2-2)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+    context: { unit: 2, slot: 2 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 104,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 6, code: 72, key: 'noteon:6:72' },
+    canonicalTarget: 'beatfx.on_off',
+    context: { unit: 2, slot: 2 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.on_off.unit2.slot2.led',
+    timestamp: 104,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 2 slot 3 on/off LED (FX2-3)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: false,
+    context: { unit: 2, slot: 3 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 105,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 6, code: 73, key: 'noteon:6:73' },
+    canonicalTarget: 'beatfx.on_off',
+    context: { unit: 2, slot: 3 },
+    value: 0,
+    outputKind: 'light',
+    bindingId: 'beatfx.on_off.unit2.slot3.led',
+    timestamp: 105,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages does not resolve Beat FX on/off LED for wrong unit', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+    context: { unit: 99, slot: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 106,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
+test('buildFlx6OutputMessages does not resolve Beat FX on/off LED for wrong slot', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+    context: { unit: 1, slot: 99 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 107,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
+test('buildFlx6OutputMessages does not silently pick first Beat FX candidate when context is missing', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 108,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
+test('buildFlx6OutputMessages does not resolve Beat FX on/off LED when only unit is provided', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.on_off',
+    value: true,
+    context: { unit: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 109,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
 test('flx6 handleOutput turns canonical requests into real LED messages', () => {
   const state = createFlx6RuntimeState();
 

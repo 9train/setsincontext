@@ -266,6 +266,32 @@ function buildPadSurfaceOutputBindings() {
   );
 }
 
+const flx6BeatFxOnOffSpecs = Object.freeze([
+  Object.freeze({ unit: 1, slot: 1, channel: 5, code: 71, label: 'Beat FX unit 1 on/off slot 1' }),
+  Object.freeze({ unit: 1, slot: 2, channel: 5, code: 72, label: 'Beat FX unit 1 on/off slot 2' }),
+  Object.freeze({ unit: 1, slot: 3, channel: 5, code: 73, label: 'Beat FX unit 1 on/off slot 3' }),
+  Object.freeze({ unit: 2, slot: 1, channel: 6, code: 71, label: 'Beat FX unit 2 on/off slot 1' }),
+  Object.freeze({ unit: 2, slot: 2, channel: 6, code: 72, label: 'Beat FX unit 2 on/off slot 2' }),
+  Object.freeze({ unit: 2, slot: 3, channel: 6, code: 73, label: 'Beat FX unit 2 on/off slot 3' }),
+]);
+
+function buildBeatFxOnOffOutputBindings() {
+  return flx6BeatFxOnOffSpecs.map((spec) =>
+    lightBinding({
+      id: `beatfx.on_off.unit${spec.unit}.slot${spec.slot}.led`,
+      canonical: 'beatfx.on_off',
+      channel: spec.channel,
+      code: spec.code,
+      context: { unit: spec.unit, slot: spec.slot },
+      note: `${spec.label} LED from the FLX6 CSV MIDI-OUT rows.`,
+    })
+  );
+}
+
+function isBeatFxOnOffCanonical(value) {
+  return String(value || '').trim().toLowerCase() === 'beatfx.on_off';
+}
+
 function coerceLightValue(value) {
   if (typeof value === 'boolean') return value ? 127 : 0;
   if (typeof value === 'string') {
@@ -439,6 +465,7 @@ export const flx6OutputBindings = Object.freeze([
   ...buildDeckLayerLeds(flx6LoopButtonSpecs),
   ...buildPadModeOutputBindings(),
   ...buildPadSurfaceOutputBindings(),
+  ...buildBeatFxOnOffOutputBindings(),
 ]);
 
 export const flx6OutputTargets = Object.freeze([
@@ -475,6 +502,18 @@ export function findFlx6OutputBindings(request, options = {}) {
   const scoped = exactLayer.length ? exactLayer : candidates;
 
   if (!isPadCanonicalTarget(canonicalTarget)) {
+    if (isBeatFxOnOffCanonical(canonicalTarget)) {
+      const rawUnit = request && request.context && request.context.unit;
+      const rawSlot = request && request.context && request.context.slot;
+      const unit = Number(rawUnit);
+      const slot = Number(rawSlot);
+      if (!Number.isFinite(unit) || unit < 1 || !Number.isFinite(slot) || slot < 1) return [];
+      return scoped.filter((b) =>
+        b && b.context &&
+        Number(b.context.unit) === unit &&
+        Number(b.context.slot) === slot
+      );
+    }
     return scoped;
   }
 
