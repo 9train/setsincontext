@@ -549,6 +549,15 @@ function deriveRelayControllerVisualState(controllerState) {
   return Object.keys(out).length ? out : undefined;
 }
 
+function sanitizeRelayControllerVisualState(controllerVisualState) {
+  if (!controllerVisualState || typeof controllerVisualState !== 'object') return undefined;
+  const out = {};
+  assignIfDefined(out, 'padMode', sanitizeRelaySideState(controllerVisualState.padMode, sanitizeRelayPadMode));
+  assignIfDefined(out, 'jogCutter', sanitizeRelaySideState(controllerVisualState.jogCutter, sanitizeRelayBooleanState));
+  assignIfDefined(out, 'jogVinylMode', sanitizeRelaySideState(controllerVisualState.jogVinylMode, sanitizeRelayBooleanState));
+  return Object.keys(out).length ? out : undefined;
+}
+
 function buildRelayEvent(info) {
   const raw = normalizeInfo(info);
   if (!raw || typeof raw !== 'object') return null;
@@ -579,7 +588,11 @@ function buildRelayEvent(info) {
   assignIfDefined(relay, 'context', sanitizeRelayContext(raw.context));
   assignIfDefined(relay, 'truthStatus', asRelayString(raw.truthStatus || raw.render && raw.render.truthStatus));
   assignIfDefined(relay, 'render', sanitizeRelayRender(raw.render, raw));
-  assignIfDefined(relay, 'controllerVisualState', deriveRelayControllerVisualState(raw.controllerState));
+  assignIfDefined(
+    relay,
+    'controllerVisualState',
+    sanitizeRelayControllerVisualState(raw.controllerVisualState) || deriveRelayControllerVisualState(raw.controllerState),
+  );
   assignIfDefined(relay, 'interaction', normalizedInteraction);
   assignIfDefined(relay, 'type', type ? type.toLowerCase() : undefined);
   assignIfDefined(relay, 'ch', channel);

@@ -246,6 +246,23 @@ function clearMessages(messages) {
   messages.splice(0, messages.length);
 }
 
+function findVisualHydration(messages, room) {
+  return messages.find((msg) => (
+    msg?.type === 'controller_event' &&
+    msg.room === room &&
+    msg.event?.eventType === 'controller_visual_state_snapshot'
+  ));
+}
+
+function assertNoHeavyControllerSnapshots(payload) {
+  const text = JSON.stringify(payload);
+  assert.equal(text.includes('"controllerState"'), false);
+  assert.equal(text.includes('"profileSnapshot"'), false);
+  assert.equal(text.includes('"profile"'), false);
+  assert.equal(text.includes('"raw"'), false);
+  assert.equal(text.includes('"debug"'), false);
+}
+
 async function closeClient(ws) {
   if (ws.readyState >= WebSocket.CLOSING) return;
   const done = new Promise((resolve) => ws.once('close', resolve));
@@ -444,6 +461,235 @@ test('room map sync is provisional state and stays separate from official contro
 
     await closeClient(viewer.ws);
     await closeClient(host.ws);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('server hydrates late and reconnecting viewers with latest compact controllerVisualState only', async () => {
+  const server = await startServer();
+
+  try {
+    const host = await openClient({ wsPort: server.wsPort, role: 'host', room: 'visual-alpha' });
+    host.ws.send(JSON.stringify({ type: 'join', role: 'host', room: 'visual-alpha' }));
+    await waitFor(() => host.messages.some((msg) => msg.type === 'presence' && msg.room === 'visual-alpha'));
+
+    host.ws.send(JSON.stringify({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        mapped: true,
+        profileId: 'pioneer-ddj-flx6',
+        canonicalTarget: 'deck.left.pad.mode.sampler',
+        controllerVisualState: {
+          padMode: {
+            left: 'sampler',
+            right: 'hotcue',
+            hidden: 'beatjump',
+          },
+          jogCutter: {
+            left: false,
+            right: true,
+            hidden: true,
+          },
+          jogVinylMode: {
+            left: true,
+            right: false,
+            hidden: false,
+          },
+          raw: { bytes: [1, 2, 3] },
+        },
+        controllerState: {
+          padMode: { left: 'fx' },
+          dump: 'full state must not hydrate',
+        },
+        profileSnapshot: { dump: 'profile snapshot must not hydrate' },
+        profile: { dump: 'profile must not hydrate' },
+        raw: { dump: 'raw must not hydrate' },
+        debug: { dump: 'debug must not hydrate' },
+      },
+    }));
+    await delay(50);
+
+    const lateViewer = await openClient({ wsPort: server.wsPort, role: 'viewer', room: 'visual-alpha' });
+    lateViewer.ws.send(JSON.stringify({ type: 'join', role: 'viewer', room: 'visual-alpha' }));
+    await waitFor(() => findVisualHydration(lateViewer.messages, 'visual-alpha'));
+
+    const firstHydration = findVisualHydration(lateViewer.messages, 'visual-alpha');
+    assert.equal(firstHydration.event.source, 'server-room-hydration');
+    assert.equal(firstHydration.event.mapped, false);
+    assert.equal(Number.isFinite(firstHydration.event.timestamp), true);
+    assert.deepEqual(firstHydration.event.controllerVisualState, {
+      padMode: {
+        left: 'sampler',
+        right: 'hotcue',
+      },
+      jogCutter: {
+        left: false,
+        right: true,
+      },
+      jogVinylMode: {
+        left: true,
+        right: false,
+      },
+    });
+    assertNoHeavyControllerSnapshots(firstHydration);
+    assert.equal('canonicalTarget' in firstHydration.event, false);
+    assert.equal('mappingId' in firstHydration.event, false);
+
+    clearMessages(lateViewer.messages);
+    host.ws.send(JSON.stringify({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        mapped: true,
+        profileId: 'pioneer-ddj-flx6',
+        canonicalTarget: 'deck.left.pad.mode.fx',
+        controllerVisualState: {
+          padMode: {
+            left: 'fx',
+          },
+        },
+        controllerState: { dump: 'full state must not relay' },
+        profileSnapshot: { dump: 'profile snapshot must not relay' },
+        profile: { dump: 'profile must not relay' },
+        raw: { dump: 'raw must not relay' },
+        debug: { dump: 'debug must not relay' },
+      },
+    }));
+    await waitFor(() => lateViewer.messages.some((msg) => (
+      msg.type === 'controller_event' &&
+      msg.event?.eventType === 'normalized_input'
+    )));
+
+    const liveRelay = lateViewer.messages.find((msg) => (
+      msg.type === 'controller_event' &&
+      msg.event?.eventType === 'normalized_input'
+    ));
+    assert.deepEqual(liveRelay.event.controllerVisualState, {
+      padMode: {
+        left: 'fx',
+      },
+    });
+    assert.equal(liveRelay.event.canonicalTarget, 'deck.left.pad.mode.fx');
+    assertNoHeavyControllerSnapshots(liveRelay);
+
+    await closeClient(lateViewer.ws);
+
+    host.ws.send(JSON.stringify({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        mapped: true,
+        profileId: 'pioneer-ddj-flx6',
+        canonicalTarget: 'deck.right.pad.mode.beatjump',
+        controllerVisualState: {
+          padMode: {
+            right: 'beatjump',
+          },
+          jogCutter: {
+            right: false,
+          },
+          jogVinylMode: {
+            right: true,
+          },
+          controllerState: { should: 'not hydrate' },
+          profileSnapshot: { should: 'not hydrate' },
+          raw: { should: 'not hydrate' },
+          debug: { should: 'not hydrate' },
+        },
+        controllerState: {
+          padMode: { left: 'sampler', right: 'sampler' },
+          jogCutter: { right: true },
+          jogVinylMode: { right: false },
+        },
+      },
+    }));
+    await delay(50);
+
+    const reconnectedViewer = await openClient({ wsPort: server.wsPort, role: 'viewer', room: 'visual-alpha' });
+    reconnectedViewer.ws.send(JSON.stringify({ type: 'join', role: 'viewer', room: 'visual-alpha' }));
+    await waitFor(() => findVisualHydration(reconnectedViewer.messages, 'visual-alpha'));
+
+    const reconnectHydration = findVisualHydration(reconnectedViewer.messages, 'visual-alpha');
+    assert.deepEqual(reconnectHydration.event.controllerVisualState, {
+      padMode: {
+        right: 'beatjump',
+      },
+      jogCutter: {
+        right: false,
+      },
+      jogVinylMode: {
+        right: true,
+      },
+    });
+    assertNoHeavyControllerSnapshots(reconnectHydration);
+    assert.equal('left' in reconnectHydration.event.controllerVisualState.padMode, false);
+
+    await closeClient(reconnectedViewer.ws);
+    await closeClient(host.ws);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('server skips visual-state hydration for rooms without a compact host snapshot', async () => {
+  const server = await startServer();
+
+  try {
+    const viewer = await openClient({ wsPort: server.wsPort, role: 'viewer', room: 'empty-visual' });
+    viewer.ws.send(JSON.stringify({ type: 'join', role: 'viewer', room: 'empty-visual' }));
+    await waitFor(() => viewer.messages.some((msg) => msg.type === 'presence' && msg.room === 'empty-visual'));
+    await delay(80);
+
+    assert.equal(findVisualHydration(viewer.messages, 'empty-visual'), undefined);
+
+    await closeClient(viewer.ws);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('server keeps compact controllerVisualState hydration isolated by room', async () => {
+  const server = await startServer();
+
+  try {
+    const alphaHost = await openClient({ wsPort: server.wsPort, role: 'host', room: 'visual-alpha' });
+    alphaHost.ws.send(JSON.stringify({ type: 'join', role: 'host', room: 'visual-alpha' }));
+    await waitFor(() => alphaHost.messages.some((msg) => msg.type === 'presence' && msg.room === 'visual-alpha'));
+
+    alphaHost.ws.send(JSON.stringify({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        mapped: true,
+        controllerVisualState: {
+          padMode: { left: 'sampler' },
+          jogCutter: { right: true },
+        },
+      },
+    }));
+    await delay(50);
+
+    const betaViewer = await openClient({ wsPort: server.wsPort, role: 'viewer', room: 'visual-beta' });
+    betaViewer.ws.send(JSON.stringify({ type: 'join', role: 'viewer', room: 'visual-beta' }));
+    await waitFor(() => betaViewer.messages.some((msg) => msg.type === 'presence' && msg.room === 'visual-beta'));
+    await delay(80);
+    assert.equal(findVisualHydration(betaViewer.messages, 'visual-beta'), undefined);
+    assert.equal(betaViewer.messages.some((msg) => msg.room === 'visual-alpha'), false);
+
+    const alphaViewer = await openClient({ wsPort: server.wsPort, role: 'viewer', room: 'visual-alpha' });
+    alphaViewer.ws.send(JSON.stringify({ type: 'join', role: 'viewer', room: 'visual-alpha' }));
+    await waitFor(() => findVisualHydration(alphaViewer.messages, 'visual-alpha'));
+
+    assert.deepEqual(findVisualHydration(alphaViewer.messages, 'visual-alpha').event.controllerVisualState, {
+      padMode: { left: 'sampler' },
+      jogCutter: { right: true },
+    });
+
+    await closeClient(alphaViewer.ws);
+    await closeClient(betaViewer.ws);
+    await closeClient(alphaHost.ws);
   } finally {
     await server.stop();
   }

@@ -477,10 +477,36 @@ function broadcast(obj) {
 }
 
 // === Rooms with presence + provisional lastMap (+ lastKey) ==================
-// roomName -> { hosts:Set<WebSocket>, viewers:Set<WebSocket>, lastMap:Array|null, lastKey:string|null }
+// roomName -> {
+//   hosts:Set<WebSocket>,
+//   viewers:Set<WebSocket>,
+//   lastMap:Array|null,
+//   lastKey:string|null,
+//   lastControllerVisualState:Object|null
+// }
 const rooms = new Map();
 const ROOM_MAP_AUTHORITY = 'draft';
 const ROOM_MAP_STATE = 'provisional';
+const ROOM_VISUAL_STATE_SOURCE = 'server-room-hydration';
+const ROOM_VISUAL_SIDES = Object.freeze(['left', 'right']);
+const ROOM_PAD_MODES = Object.freeze(new Set([
+  'hotcue',
+  'fx',
+  'padfx',
+  'beatjump',
+  'sampler',
+  'keyboard',
+  'key_shift',
+  'beat_loop',
+  'sample_scratch',
+]));
+const CONTROLLER_EVENT_LOCAL_SNAPSHOT_KEYS = Object.freeze(new Set([
+  'controllerState',
+  'profileSnapshot',
+  'profile',
+  'raw',
+  'debug',
+]));
 const AUTO_JOIN_TYPES = new Set([
   'map:get',
   'map:set',
@@ -498,6 +524,7 @@ function getRoom(roomName) {
       viewers: new Set(),
       lastMap: null,
       lastKey: null,
+      lastControllerVisualState: null,
     });
   }
   return rooms.get(roomName);
@@ -514,6 +541,67 @@ function createRoomMapSyncFrame(roomName, roomState) {
     controllerTruth: false,
     diagnosticOnly: true,
     mapLabel: 'provisional draft room map',
+  };
+}
+
+function normalizeRoomPadMode(value) {
+  if (value == null) return undefined;
+  const text = String(value).trim().toLowerCase();
+  return ROOM_PAD_MODES.has(text) ? text : undefined;
+}
+
+function normalizeRoomBooleanState(value) {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function sanitizeRoomSideState(source, sanitizer) {
+  if (!source || typeof source !== 'object') return undefined;
+  const out = {};
+  for (const side of ROOM_VISUAL_SIDES) {
+    if (!Object.prototype.hasOwnProperty.call(source, side)) continue;
+    const value = sanitizer(source[side]);
+    if (value !== undefined) out[side] = value;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function sanitizeControllerVisualState(source) {
+  if (!source || typeof source !== 'object') return null;
+  const out = {};
+  const padMode = sanitizeRoomSideState(source.padMode, normalizeRoomPadMode);
+  const jogCutter = sanitizeRoomSideState(source.jogCutter, normalizeRoomBooleanState);
+  const jogVinylMode = sanitizeRoomSideState(source.jogVinylMode, normalizeRoomBooleanState);
+  if (padMode) out.padMode = padMode;
+  if (jogCutter) out.jogCutter = jogCutter;
+  if (jogVinylMode) out.jogVinylMode = jogVinylMode;
+  return Object.keys(out).length ? out : null;
+}
+
+function sanitizeControllerEventForRelay(event, visualState = sanitizeControllerVisualState(event?.controllerVisualState)) {
+  if (!event || typeof event !== 'object') return null;
+  const out = {};
+  for (const [key, value] of Object.entries(event)) {
+    if (CONTROLLER_EVENT_LOCAL_SNAPSHOT_KEYS.has(key)) continue;
+    if (key === 'controllerVisualState') {
+      if (visualState) out.controllerVisualState = visualState;
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+function createControllerVisualStateHydrationFrame(roomName, roomState) {
+  return {
+    type: 'controller_event',
+    room: roomName,
+    event: {
+      eventType: 'controller_visual_state_snapshot',
+      source: ROOM_VISUAL_STATE_SOURCE,
+      mapped: false,
+      timestamp: Date.now(),
+      controllerVisualState: roomState.lastControllerVisualState,
+    },
   };
 }
 
@@ -645,6 +733,10 @@ function joinSocket(ws, { role, room, metadata } = {}) {
 
     if (ws.role === 'viewer' && r.lastMap && Array.isArray(r.lastMap) && r.lastMap.length) {
       send(ws, createRoomMapSyncFrame(ws.room, r));
+    }
+
+    if (ws.role === 'viewer' && r.lastControllerVisualState) {
+      send(ws, createControllerVisualStateHydrationFrame(ws.room, r));
     }
   }
 
@@ -1051,7 +1143,16 @@ wss.on('connection', (ws, req) => {
       // New controller events pass through in their explicit relay shape so viewers
       // can consume canonical fields directly.
       if (ws.role === 'host' && msg.type === 'controller_event' && msg.event && typeof msg.event === 'object') {
-        broadcastToViewers_raw(ws.room, { type: 'controller_event', room: ws.room, event: msg.event }, ws);
+        const r = getRoom(ws.room);
+        const visualState = sanitizeControllerVisualState(msg.event.controllerVisualState);
+        if (visualState) {
+          r.lastControllerVisualState = visualState;
+        }
+        broadcastToViewers_raw(ws.room, {
+          type: 'controller_event',
+          room: ws.room,
+          event: sanitizeControllerEventForRelay(msg.event, visualState),
+        }, ws);
         return;
       }
 
