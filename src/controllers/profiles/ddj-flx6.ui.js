@@ -71,6 +71,14 @@ function buildLoopCallRenderTargets(side, sideLabel) {
   });
 }
 
+function buildDeckStateRenderTargets(side, sideLabel) {
+  return Object.freeze({
+    [`deck.${sideLabel}.state.normal`]: `deck_layer_main_${side}`,
+    [`deck.${sideLabel}.state.jog_cutter`]: `deck_layer_alt_${side}`,
+    [`deck.${sideLabel}.state.vinyl`]: `vinyl_${side}`,
+  });
+}
+
 function buildRenderTargetsFromEditorTargets(targets = []) {
   return Object.fromEntries(
     targets
@@ -123,6 +131,8 @@ const flx6RenderTargets = Object.freeze({
   'deck.right.transport.load.alternate': 'load_4',
   ...buildLoopCallRenderTargets('L', 'left'),
   ...buildLoopCallRenderTargets('R', 'right'),
+  ...buildDeckStateRenderTargets('L', 'left'),
+  ...buildDeckStateRenderTargets('R', 'right'),
   ...buildPadModeRenderTargets('L', 'left'),
   ...buildPadModeRenderTargets('R', 'right'),
   ...buildPadRenderTargets('L', 'left'),
@@ -413,6 +423,24 @@ function buildDeckTargets(side, sideLabel) {
       label: `${deckLabel} Deck Layer`,
       aliases: [`btn_DECK_SELECT_${side}`],
       renderKind: 'button',
+    },
+    {
+      targetId: `deck_layer_main_${side}`,
+      canonicalTarget: `deck.${sideLabel}.state.normal`,
+      label: `${deckLabel} Normal State`,
+      renderKind: 'deck-state',
+    },
+    {
+      targetId: `deck_layer_alt_${side}`,
+      canonicalTarget: `deck.${sideLabel}.state.jog_cutter`,
+      label: `${deckLabel} Jog Cutter State`,
+      renderKind: 'deck-state',
+    },
+    {
+      targetId: `vinyl_${side}`,
+      canonicalTarget: `deck.${sideLabel}.state.vinyl`,
+      label: `${deckLabel} Vinyl State`,
+      renderKind: 'deck-state',
     },
     ...flx6PadModeTargets.map((target) => ({
       targetId: `${target.targetPrefix}_${side}`,
