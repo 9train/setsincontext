@@ -47,6 +47,18 @@ const RECONNECT_MAX_MS = 10000;
 // IMPORTANT: with a WS server doing protocol-level ping/pong, idle-kill can cause flapping.
 // Keep feature but default to off (0). Set to >0 only if you truly want it.
 const IDLE_KILL_MS = 0;
+const RELAY_VISUAL_SIDES = Object.freeze(['left', 'right']);
+const RELAY_PAD_MODES = Object.freeze(new Set([
+  'hotcue',
+  'fx',
+  'padfx',
+  'beatjump',
+  'sampler',
+  'keyboard',
+  'key_shift',
+  'beat_loop',
+  'sample_scratch',
+]));
 
 function log(...a){ try{ console.debug('[WS]', ...a);}catch{} }
 function debugLog(...a){ try{ console.debug('[FLX debug]', ...a);}catch{} }
@@ -506,6 +518,37 @@ function sanitizeRelayJogVisual(jogVisual) {
   return Object.keys(out).length ? out : undefined;
 }
 
+function sanitizeRelayPadMode(value) {
+  const mode = asRelayString(value);
+  if (!mode) return undefined;
+  const normalized = mode.toLowerCase();
+  return RELAY_PAD_MODES.has(normalized) ? normalized : undefined;
+}
+
+function sanitizeRelayBooleanState(value) {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function sanitizeRelaySideState(source, sanitizer) {
+  if (!source || typeof source !== 'object') return undefined;
+  const out = {};
+  RELAY_VISUAL_SIDES.forEach((side) => {
+    if (!Object.prototype.hasOwnProperty.call(source, side)) return;
+    const value = sanitizer(source[side]);
+    assignIfDefined(out, side, value);
+  });
+  return Object.keys(out).length ? out : undefined;
+}
+
+function deriveRelayControllerVisualState(controllerState) {
+  if (!controllerState || typeof controllerState !== 'object') return undefined;
+  const out = {};
+  assignIfDefined(out, 'padMode', sanitizeRelaySideState(controllerState.padMode, sanitizeRelayPadMode));
+  assignIfDefined(out, 'jogCutter', sanitizeRelaySideState(controllerState.jogCutter, sanitizeRelayBooleanState));
+  assignIfDefined(out, 'jogVinylMode', sanitizeRelaySideState(controllerState.jogVinylMode, sanitizeRelayBooleanState));
+  return Object.keys(out).length ? out : undefined;
+}
+
 function buildRelayEvent(info) {
   const raw = normalizeInfo(info);
   if (!raw || typeof raw !== 'object') return null;
@@ -536,6 +579,7 @@ function buildRelayEvent(info) {
   assignIfDefined(relay, 'context', sanitizeRelayContext(raw.context));
   assignIfDefined(relay, 'truthStatus', asRelayString(raw.truthStatus || raw.render && raw.render.truthStatus));
   assignIfDefined(relay, 'render', sanitizeRelayRender(raw.render, raw));
+  assignIfDefined(relay, 'controllerVisualState', deriveRelayControllerVisualState(raw.controllerState));
   assignIfDefined(relay, 'interaction', normalizedInteraction);
   assignIfDefined(relay, 'type', type ? type.toLowerCase() : undefined);
   assignIfDefined(relay, 'ch', channel);

@@ -153,6 +153,12 @@ function createBoardFixture(ids = []) {
   return { root, elements };
 }
 
+function assertOnlyLit(elements, ids, activeId, label = '') {
+  ids.forEach((id) => {
+    assert.equal(elements.get(id).classList.contains('lit'), id === activeId, `${label}${id}`);
+  });
+}
+
 test('viewer bootstrap retains remote map sync as draft metadata without fallback bootstrap', async () => {
   const fallbackMap = [{ key: 'cc:1:10', target: 'jog_L' }];
   const remoteMap = [{ key: 'cc:1:11', target: 'jog_R' }];
@@ -256,6 +262,108 @@ test('viewer bootstrap renders official controller_event frames without fallback
     assert.equal(seen[0]._boardRender.ownership, 'official');
     assert.equal(seen[0]._boardRender.outcome, 'updated');
     assert.equal(elements.get('play_L').classList.contains('lit'), true);
+  } finally {
+    resetBoardState();
+    env.restore();
+  }
+});
+
+test('viewer bootstrap passes compact controllerVisualState to board projection without controllerState', async () => {
+  const seen = [];
+  const { root, elements } = createBoardFixture([
+    'play_L',
+    'hotcue_L',
+    'padfx_L',
+    'beatjump_L',
+    'sampler_L',
+    'hotcue_R',
+    'padfx_R',
+    'beatjump_R',
+    'sampler_R',
+    'deck_layer_alt_R',
+    'deck_layer_main_R',
+    'vinyl_R',
+  ]);
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '?ws=ws://viewer.test&room=visual-state',
+    WebSocketImpl: FakeWebSocket,
+  });
+  resetBoardState();
+  setBoardSvgRoot(root);
+  installBoardWindowBindings();
+  env.window.consumeInfo = (info) => {
+    seen.push(info);
+    consumeInfo(info);
+    return info;
+  };
+
+  try {
+    await importFresh('../src/bootstrap-viewer.js');
+    assert.equal(sockets.length, 1);
+
+    const ws = sockets[0];
+    ws.open();
+    await env.advanceTimersBy(1200);
+
+    ws.emitMessage({
+      type: 'controller_event',
+      event: {
+        eventType: 'normalized_input',
+        profileId: 'pioneer-ddj-flx6',
+        canonicalTarget: 'deck.left.transport.play',
+        mappingId: 'deck.left.transport.play.main.press',
+        mapped: true,
+        truthStatus: 'official',
+        valueShape: 'binary',
+        render: {
+          targetId: 'play_L',
+          truthStatus: 'official',
+          source: 'profile-ui',
+        },
+        controllerVisualState: {
+          padMode: {
+            left: 'hotcue',
+            right: 'sampler',
+          },
+          jogCutter: {
+            right: true,
+          },
+          jogVinylMode: {
+            right: false,
+          },
+        },
+        interaction: 'noteon',
+        type: 'noteon',
+        ch: 1,
+        d1: 11,
+        d2: 127,
+        value: 127,
+        timestamp: 3,
+      },
+    });
+
+    assert.equal(seen.length, 1);
+    assert.deepEqual(seen[0].controllerVisualState, {
+      padMode: {
+        left: 'hotcue',
+        right: 'sampler',
+      },
+      jogCutter: {
+        right: true,
+      },
+      jogVinylMode: {
+        right: false,
+      },
+    });
+    assert.equal('controllerState' in seen[0], false);
+    assert.equal(seen[0]._boardRender.targetId, 'play_L');
+    assert.equal(seen[0]._boardRender.authority, 'official-render');
+    assert.equal(seen[0]._boardRender.outcome, 'updated');
+    assert.equal(elements.get('play_L').classList.contains('lit'), true);
+    assertOnlyLit(elements, ['hotcue_L', 'padfx_L', 'beatjump_L', 'sampler_L'], 'hotcue_L', 'left pad mode ');
+    assertOnlyLit(elements, ['hotcue_R', 'padfx_R', 'beatjump_R', 'sampler_R'], 'sampler_R', 'right pad mode ');
+    assertOnlyLit(elements, ['deck_layer_alt_R', 'deck_layer_main_R', 'vinyl_R'], 'deck_layer_alt_R', 'right deck state ');
   } finally {
     resetBoardState();
     env.restore();

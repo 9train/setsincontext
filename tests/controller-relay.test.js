@@ -296,6 +296,132 @@ test('host relay preserves a slim authoritative jog visual snapshot for viewers'
   }
 });
 
+test('host relay derives compact FLX6 controllerVisualState from controllerState', async () => {
+  const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
+  const env = installMockBrowser({
+    locationSearch: '',
+    WebSocketImpl: FakeWebSocket,
+  });
+
+  try {
+    const { connectWS } = await importFresh('../src/ws.js');
+    const client = connectWS({
+      url: 'ws://relay.test',
+      role: 'host',
+      room: 'visual-state',
+    });
+
+    assert.equal(sockets.length, 1);
+    const ws = sockets[0];
+    ws.open();
+
+    await env.advanceTimersBy(1300);
+
+    const heavyBlob = 'x'.repeat(250000);
+    const sent = client.send({
+      eventType: 'normalized_input',
+      transport: 'midi',
+      sourceId: 'web-midi:ddj-flx6',
+      deviceName: 'Pioneer DDJ-FLX6',
+      profileId: 'pioneer-ddj-flx6',
+      rawTarget: 'jog_L',
+      valueShape: 'relative',
+      canonicalTarget: 'deck.left.jog.motion',
+      mappingId: 'deck.left.jog.motion.tertiary',
+      context: { deckLayer: 'main', padMode: 'hotcue' },
+      mapped: true,
+      truthStatus: 'official',
+      render: {
+        targetId: 'jog_L',
+        truthStatus: 'official',
+        source: 'profile-ui',
+      },
+      interaction: 'cc',
+      type: 'cc',
+      ch: 1,
+      controller: 35,
+      d1: 35,
+      d2: 65,
+      value: 65,
+      timestamp: 2000,
+      controllerState: {
+        padMode: {
+          left: 'hotcue',
+          right: 'sampler',
+          hidden: heavyBlob,
+        },
+        jogCutter: {
+          left: false,
+          right: true,
+          hidden: true,
+        },
+        jogVinylMode: {
+          left: true,
+          right: false,
+          hidden: false,
+        },
+        temporary: {
+          lastDebugEvent: { dump: heavyBlob },
+        },
+        profileSnapshot: {
+          dump: heavyBlob,
+        },
+      },
+      raw: { dump: heavyBlob },
+      profile: { dump: heavyBlob },
+      debug: { dump: heavyBlob },
+    });
+
+    assert.equal(sent, true);
+
+    const frames = ws.sent.map((message) => JSON.parse(message));
+    const relayFrame = frames.find((frame) => frame.type === 'controller_event');
+    const event = relayFrame.event;
+    const relayBytes = Buffer.byteLength(JSON.stringify(event), 'utf8');
+
+    assert.deepEqual(event.controllerVisualState, {
+      padMode: {
+        left: 'hotcue',
+        right: 'sampler',
+      },
+      jogCutter: {
+        left: false,
+        right: true,
+      },
+      jogVinylMode: {
+        left: true,
+        right: false,
+      },
+    });
+    assert.equal(event.canonicalTarget, 'deck.left.jog.motion');
+    assert.equal(event.mappingId, 'deck.left.jog.motion.tertiary');
+    assert.deepEqual(event.context, { deckLayer: 'main', padMode: 'hotcue' });
+    assert.equal(event.interaction, 'cc');
+    assert.equal(event.type, 'cc');
+    assert.equal(event.ch, 1);
+    assert.equal(event.controller, 35);
+    assert.equal(event.d1, 35);
+    assert.equal(event.d2, 65);
+    assert.equal(event.value, 65);
+    assert.equal(event.valueShape, 'relative');
+    assert.equal(event.truthStatus, 'official');
+    assert.deepEqual(event.render, {
+      targetId: 'jog_L',
+      truthStatus: 'official',
+      source: 'profile-ui',
+    });
+    assert.equal('controllerState' in event, false);
+    assert.equal('profileSnapshot' in event, false);
+    assert.equal('raw' in event, false);
+    assert.equal('profile' in event, false);
+    assert.equal('debug' in event, false);
+    assert.equal(JSON.stringify(event).includes(heavyBlob), false);
+    assert.ok(relayBytes < 1400);
+  } finally {
+    env.restore();
+  }
+});
+
 test('host relay strips boardCompat while preserving explicit debug target metadata', async () => {
   const { FakeWebSocket, sockets } = createFakeWebSocketHarness();
   const env = installMockBrowser({
