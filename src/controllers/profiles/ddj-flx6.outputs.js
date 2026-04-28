@@ -187,6 +187,18 @@ const flx6TransportDeckLayers = Object.freeze([
   Object.freeze({ deckLayer: 'alternate', leftChannel: 3, rightChannel: 4 }),
 ]);
 
+const flx6DeckLayerButtonSpecs = Object.freeze([
+  Object.freeze({ canonical: 'deck.left.transport.layer', channel: 3, code: 114, label: 'Left deck layer' }),
+  Object.freeze({ canonical: 'deck.right.transport.layer', channel: 4, code: 114, label: 'Right deck layer' }),
+]);
+
+const flx6MixerCueSpecs = Object.freeze([
+  Object.freeze({ canonical: 'mixer.channel.1.cue', channel: 1, code: 84, label: 'Channel 1 cue' }),
+  Object.freeze({ canonical: 'mixer.channel.2.cue', channel: 2, code: 84, label: 'Channel 2 cue' }),
+  Object.freeze({ canonical: 'mixer.channel.3.cue', channel: 3, code: 84, label: 'Channel 3 cue' }),
+  Object.freeze({ canonical: 'mixer.channel.4.cue', channel: 4, code: 84, label: 'Channel 4 cue' }),
+]);
+
 const flx6SyncMasterSpecs = Object.freeze([
   Object.freeze({ canonical: 'deck.left.transport.sync', side: 'left', code: 88, label: 'Left sync' }),
   Object.freeze({ canonical: 'deck.right.transport.sync', side: 'right', code: 88, label: 'Right sync' }),
@@ -409,6 +421,20 @@ export const flx6OutputBindings = Object.freeze([
     code: 16,
     note: 'Right Merge FX illumination from the FLX6 CSV MIDI-OUT rows.',
   }),
+  ...flx6DeckLayerButtonSpecs.map((spec) => lightBinding({
+    id: `${spec.canonical}.led`,
+    canonical: spec.canonical,
+    channel: spec.channel,
+    code: spec.code,
+    note: `${spec.label} button LED from the FLX6 CSV MIDI-OUT rows.`,
+  })),
+  ...flx6MixerCueSpecs.map((spec) => lightBinding({
+    id: `${spec.canonical}.led`,
+    canonical: spec.canonical,
+    channel: spec.channel,
+    code: spec.code,
+    note: `${spec.label} button LED from the FLX6 CSV MIDI-OUT rows.`,
+  })),
   ...buildDeckLayerLeds(flx6SyncMasterSpecs),
   ...buildDeckLayerLeds(flx6LoopButtonSpecs),
   ...buildPadModeOutputBindings(),

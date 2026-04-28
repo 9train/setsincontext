@@ -328,6 +328,124 @@ test('buildFlx6OutputMessages resolves loop button LEDs for the active deck laye
   ]);
 });
 
+test('buildFlx6OutputMessages resolves deck layer button LEDs for left and right sides', () => {
+  const messages = buildFlx6OutputMessages([
+    { canonicalTarget: 'deck.left.transport.layer', value: true },
+    { canonicalTarget: 'deck.right.transport.layer', value: false },
+  ], {
+    profileId: flx6Profile.id,
+    timestamp: 90,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [
+    {
+      target: { kind: 'light', channel: 3, code: 114, key: 'noteon:3:114' },
+      canonicalTarget: 'deck.left.transport.layer',
+      context: {},
+      value: 127,
+      outputKind: 'light',
+      bindingId: 'deck.left.transport.layer.led',
+      timestamp: 90,
+      profileId: flx6Profile.id,
+    },
+    {
+      target: { kind: 'light', channel: 4, code: 114, key: 'noteon:4:114' },
+      canonicalTarget: 'deck.right.transport.layer',
+      context: {},
+      value: 0,
+      outputKind: 'light',
+      bindingId: 'deck.right.transport.layer.led',
+      timestamp: 90,
+      profileId: flx6Profile.id,
+    },
+  ]);
+});
+
+test('buildFlx6OutputMessages deck layer LED resolves regardless of active deck layer state', () => {
+  const controllerState = createFlx6RuntimeState({
+    deckLayer: { left: 'alternate', right: 'alternate' },
+  });
+
+  const messages = buildFlx6OutputMessages([
+    { canonicalTarget: 'deck.left.transport.layer', value: true },
+  ], {
+    profileId: flx6Profile.id,
+    timestamp: 91,
+    controllerState,
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 3, code: 114, key: 'noteon:3:114' },
+    canonicalTarget: 'deck.left.transport.layer',
+    context: {},
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'deck.left.transport.layer.led',
+    timestamp: 91,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves all four mixer channel cue LEDs', () => {
+  const messages = buildFlx6OutputMessages([
+    { canonicalTarget: 'mixer.channel.1.cue', value: true },
+    { canonicalTarget: 'mixer.channel.2.cue', value: false },
+    { canonicalTarget: 'mixer.channel.3.cue', value: true },
+    { canonicalTarget: 'mixer.channel.4.cue', value: false },
+  ], {
+    profileId: flx6Profile.id,
+    timestamp: 92,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [
+    {
+      target: { kind: 'light', channel: 1, code: 84, key: 'noteon:1:84' },
+      canonicalTarget: 'mixer.channel.1.cue',
+      context: {},
+      value: 127,
+      outputKind: 'light',
+      bindingId: 'mixer.channel.1.cue.led',
+      timestamp: 92,
+      profileId: flx6Profile.id,
+    },
+    {
+      target: { kind: 'light', channel: 2, code: 84, key: 'noteon:2:84' },
+      canonicalTarget: 'mixer.channel.2.cue',
+      context: {},
+      value: 0,
+      outputKind: 'light',
+      bindingId: 'mixer.channel.2.cue.led',
+      timestamp: 92,
+      profileId: flx6Profile.id,
+    },
+    {
+      target: { kind: 'light', channel: 3, code: 84, key: 'noteon:3:84' },
+      canonicalTarget: 'mixer.channel.3.cue',
+      context: {},
+      value: 127,
+      outputKind: 'light',
+      bindingId: 'mixer.channel.3.cue.led',
+      timestamp: 92,
+      profileId: flx6Profile.id,
+    },
+    {
+      target: { kind: 'light', channel: 4, code: 84, key: 'noteon:4:84' },
+      canonicalTarget: 'mixer.channel.4.cue',
+      context: {},
+      value: 0,
+      outputKind: 'light',
+      bindingId: 'mixer.channel.4.cue.led',
+      timestamp: 92,
+      profileId: flx6Profile.id,
+    },
+  ]);
+});
+
 test('flx6 handleOutput turns canonical requests into real LED messages', () => {
   const state = createFlx6RuntimeState();
 
