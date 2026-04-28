@@ -287,6 +287,38 @@ test('host-page.js delegates launcher actions while host.html stays thin', () =>
   ], 'host.html');
 });
 
+test('launcher mapping section: Edit Mode is the primary card and Wizard is legacy/advanced only', () => {
+  const source = readRepoFile('src/launcher.js');
+
+  const mappingStart = source.indexOf('data-section="mapping"');
+  const mappingEnd = source.indexOf('data-section="tools"');
+  assert.ok(mappingStart !== -1, 'mapping section must exist in launcher.js');
+  assert.ok(mappingEnd > mappingStart, 'tools section must follow mapping section');
+  const mappingSection = source.slice(mappingStart, mappingEnd);
+
+  const editModePos = mappingSection.indexOf('Edit Mode');
+  const advancedPos = mappingSection.indexOf('launcher-advanced');
+  const wizardPos = mappingSection.indexOf('Legacy Mapping Wizard');
+
+  assert.ok(editModePos !== -1, 'Edit Mode card must appear in the mapping section');
+  assert.ok(advancedPos !== -1, 'launcher-advanced block must exist in the mapping section');
+  assert.ok(wizardPos !== -1, 'Legacy Mapping Wizard must exist in the mapping section');
+  assert.ok(editModePos < advancedPos, 'Edit Mode must be a primary card, not hidden behind Advanced');
+  assert.ok(wizardPos > advancedPos, 'Legacy Mapping Wizard must only appear inside the Advanced block');
+
+  assertIncludesAll(mappingSection, [
+    'single draft-first path',
+  ], 'launcher mapping section (Edit Mode copy)');
+
+  const afterAdvanced = mappingSection.slice(advancedPos);
+  assertIncludesAll(afterAdvanced, [
+    'Legacy Mapping Wizard',
+    'Kept for compatibility',
+    'Prefer Edit Mode',
+    'Open Legacy Mapping Wizard',
+  ], 'launcher mapping Advanced block (Wizard copy)');
+});
+
 test('getCurrentReplayPayload parses FLXRec.exportJSON output', () => {
   const payload = getCurrentReplayPayload({
     FLXRec: {
