@@ -239,6 +239,95 @@ test('buildFlx6OutputMessages keeps pad LEDs dark when the active pad mode is st
   assert.deepEqual(messages, []);
 });
 
+test('buildFlx6OutputMessages resolves sync and master transport LEDs for the active deck layer', () => {
+  const controllerState = createFlx6RuntimeState({
+    deckLayer: { left: 'main', right: 'alternate' },
+  });
+
+  const messages = buildFlx6OutputMessages([
+    { canonicalTarget: 'deck.left.transport.sync', value: true },
+    { canonicalTarget: 'deck.right.transport.master', value: true },
+  ], {
+    profileId: flx6Profile.id,
+    timestamp: 80,
+    controllerState,
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [
+    {
+      target: { kind: 'light', channel: 1, code: 88, key: 'noteon:1:88' },
+      canonicalTarget: 'deck.left.transport.sync',
+      context: { deckLayer: 'main' },
+      value: 127,
+      outputKind: 'light',
+      bindingId: 'deck.left.transport.sync.main.led',
+      timestamp: 80,
+      profileId: flx6Profile.id,
+    },
+    {
+      target: { kind: 'light', channel: 4, code: 92, key: 'noteon:4:92' },
+      canonicalTarget: 'deck.right.transport.master',
+      context: { deckLayer: 'alternate' },
+      value: 127,
+      outputKind: 'light',
+      bindingId: 'deck.right.transport.master.alternate.led',
+      timestamp: 80,
+      profileId: flx6Profile.id,
+    },
+  ]);
+});
+
+test('buildFlx6OutputMessages resolves loop button LEDs for the active deck layer', () => {
+  const controllerState = createFlx6RuntimeState({
+    deckLayer: { left: 'alternate', right: 'main' },
+  });
+
+  const messages = buildFlx6OutputMessages([
+    { canonicalTarget: 'deck.left.loop.in', value: true },
+    { canonicalTarget: 'deck.right.loop.out', value: false },
+    { canonicalTarget: 'deck.left.loop.reloop_exit', value: true },
+  ], {
+    profileId: flx6Profile.id,
+    timestamp: 81,
+    controllerState,
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [
+    {
+      target: { kind: 'light', channel: 3, code: 16, key: 'noteon:3:16' },
+      canonicalTarget: 'deck.left.loop.in',
+      context: { deckLayer: 'alternate' },
+      value: 127,
+      outputKind: 'light',
+      bindingId: 'deck.left.loop.in.alternate.led',
+      timestamp: 81,
+      profileId: flx6Profile.id,
+    },
+    {
+      target: { kind: 'light', channel: 2, code: 17, key: 'noteon:2:17' },
+      canonicalTarget: 'deck.right.loop.out',
+      context: { deckLayer: 'main' },
+      value: 0,
+      outputKind: 'light',
+      bindingId: 'deck.right.loop.out.main.led',
+      timestamp: 81,
+      profileId: flx6Profile.id,
+    },
+    {
+      target: { kind: 'light', channel: 3, code: 77, key: 'noteon:3:77' },
+      canonicalTarget: 'deck.left.loop.reloop_exit',
+      context: { deckLayer: 'alternate' },
+      value: 127,
+      outputKind: 'light',
+      bindingId: 'deck.left.loop.reloop_exit.alternate.led',
+      timestamp: 81,
+      profileId: flx6Profile.id,
+    },
+  ]);
+});
+
 test('flx6 handleOutput turns canonical requests into real LED messages', () => {
   const state = createFlx6RuntimeState();
 

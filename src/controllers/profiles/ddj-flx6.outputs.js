@@ -182,6 +182,43 @@ const flx6PadFeedbackBanks = Object.freeze([
   }),
 ]);
 
+const flx6TransportDeckLayers = Object.freeze([
+  Object.freeze({ deckLayer: 'main', leftChannel: 1, rightChannel: 2 }),
+  Object.freeze({ deckLayer: 'alternate', leftChannel: 3, rightChannel: 4 }),
+]);
+
+const flx6SyncMasterSpecs = Object.freeze([
+  Object.freeze({ canonical: 'deck.left.transport.sync', side: 'left', code: 88, label: 'Left sync' }),
+  Object.freeze({ canonical: 'deck.right.transport.sync', side: 'right', code: 88, label: 'Right sync' }),
+  Object.freeze({ canonical: 'deck.left.transport.master', side: 'left', code: 92, label: 'Left master' }),
+  Object.freeze({ canonical: 'deck.right.transport.master', side: 'right', code: 92, label: 'Right master' }),
+]);
+
+const flx6LoopButtonSpecs = Object.freeze([
+  Object.freeze({ canonical: 'deck.left.loop.in', side: 'left', code: 16, label: 'Left loop in' }),
+  Object.freeze({ canonical: 'deck.right.loop.in', side: 'right', code: 16, label: 'Right loop in' }),
+  Object.freeze({ canonical: 'deck.left.loop.out', side: 'left', code: 17, label: 'Left loop out' }),
+  Object.freeze({ canonical: 'deck.right.loop.out', side: 'right', code: 17, label: 'Right loop out' }),
+  Object.freeze({ canonical: 'deck.left.loop.reloop_exit', side: 'left', code: 77, label: 'Left reloop/exit' }),
+  Object.freeze({ canonical: 'deck.right.loop.reloop_exit', side: 'right', code: 77, label: 'Right reloop/exit' }),
+]);
+
+function buildDeckLayerLeds(specs) {
+  return specs.flatMap((spec) =>
+    flx6TransportDeckLayers.map((layer) => {
+      const channel = spec.side === 'left' ? layer.leftChannel : layer.rightChannel;
+      return lightBinding({
+        id: `${spec.canonical}.${layer.deckLayer}.led`,
+        canonical: spec.canonical,
+        channel,
+        code: spec.code,
+        context: { deckLayer: layer.deckLayer },
+        note: `${spec.label} LED for the ${layer.deckLayer} deck layer from the FLX6 CSV MIDI-OUT rows.`,
+      });
+    })
+  );
+}
+
 function buildPadModeOutputBindings() {
   return flx6PadDeckOutputs.flatMap((lane) =>
     flx6PadFeedbackBanks.map((bank) =>
@@ -372,6 +409,8 @@ export const flx6OutputBindings = Object.freeze([
     code: 16,
     note: 'Right Merge FX illumination from the FLX6 CSV MIDI-OUT rows.',
   }),
+  ...buildDeckLayerLeds(flx6SyncMasterSpecs),
+  ...buildDeckLayerLeds(flx6LoopButtonSpecs),
   ...buildPadModeOutputBindings(),
   ...buildPadSurfaceOutputBindings(),
 ]);
