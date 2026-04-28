@@ -246,6 +246,125 @@ function setLitClass(el, lit) {
   else el.classList.remove('lit');
 }
 
+const FLX6_VISUAL_SIDES = Object.freeze(['left', 'right']);
+const FLX6_PAD_MODE_TARGETS = Object.freeze({
+  left: Object.freeze({
+    hotcue: 'hotcue_L',
+    fx: 'padfx_L',
+    padfx: 'padfx_L',
+    beatjump: 'beatjump_L',
+    sampler: 'sampler_L',
+  }),
+  right: Object.freeze({
+    hotcue: 'hotcue_R',
+    fx: 'padfx_R',
+    padfx: 'padfx_R',
+    beatjump: 'beatjump_R',
+    sampler: 'sampler_R',
+  }),
+});
+const FLX6_PAD_MODE_GROUP_TARGETS = Object.freeze({
+  left: Object.freeze(['hotcue_L', 'padfx_L', 'beatjump_L', 'sampler_L']),
+  right: Object.freeze(['hotcue_R', 'padfx_R', 'beatjump_R', 'sampler_R']),
+});
+const FLX6_DECK_STATE_TARGETS = Object.freeze({
+  left: Object.freeze({
+    jogCutter: 'deck_layer_alt_L',
+    main: 'deck_layer_main_L',
+    vinyl: 'vinyl_L',
+  }),
+  right: Object.freeze({
+    jogCutter: 'deck_layer_alt_R',
+    main: 'deck_layer_main_R',
+    vinyl: 'vinyl_R',
+  }),
+});
+
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function setBoardTargetLit(targetId, lit) {
+  const el = getBoardElementById(targetId);
+  if (!el) return false;
+  setLitClass(el, lit);
+  return true;
+}
+
+function normalizePadModeName(mode) {
+  const normalized = String(mode || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (normalized === 'hotcue') return 'hotcue';
+  if (normalized === 'fx' || normalized === 'padfx') return 'fx';
+  if (normalized === 'beatjump') return 'beatjump';
+  if (normalized === 'sampler') return 'sampler';
+  return null;
+}
+
+export function applyPadModeProjection(padMode) {
+  if (!padMode || typeof padMode !== 'object') return false;
+
+  let applied = false;
+  FLX6_VISUAL_SIDES.forEach((side) => {
+    if (!hasOwn(padMode, side)) return;
+
+    const mode = normalizePadModeName(padMode[side]);
+    const targetId = mode && FLX6_PAD_MODE_TARGETS[side][mode];
+    if (!targetId) return;
+
+    FLX6_PAD_MODE_GROUP_TARGETS[side].forEach((siblingId) => {
+      applied = setBoardTargetLit(siblingId, siblingId === targetId) || applied;
+    });
+  });
+
+  return applied;
+}
+
+function hasDeckProjectionForSide(jogCutter, jogVinylMode, side) {
+  return hasOwn(jogCutter, side) || hasOwn(jogVinylMode, side);
+}
+
+export function applyDeckStateProjection({ jogCutter, jogVinylMode } = {}) {
+  let applied = false;
+
+  FLX6_VISUAL_SIDES.forEach((side) => {
+    if (!hasDeckProjectionForSide(jogCutter, jogVinylMode, side)) return;
+
+    const targets = FLX6_DECK_STATE_TARGETS[side];
+    const activeTarget = jogCutter && jogCutter[side] === true
+      ? targets.jogCutter
+      : jogVinylMode && jogVinylMode[side] === true
+        ? targets.vinyl
+        : targets.main;
+
+    [targets.jogCutter, targets.main, targets.vinyl].forEach((targetId) => {
+      applied = setBoardTargetLit(targetId, targetId === activeTarget) || applied;
+    });
+  });
+
+  return applied;
+}
+
+export function applyFlx6VisualStateProjection(projection) {
+  if (!projection || typeof projection !== 'object') return false;
+
+  const padModeApplied = applyPadModeProjection(projection.padMode);
+  const deckStateApplied = applyDeckStateProjection({
+    jogCutter: projection.jogCutter,
+    jogVinylMode: projection.jogVinylMode,
+  });
+
+  return padModeApplied || deckStateApplied;
+}
+
+function applyInfoVisualStateProjection(info) {
+  const projection = info && info.controllerVisualState && typeof info.controllerVisualState === 'object'
+    ? info.controllerVisualState
+    : info && info.controllerState && typeof info.controllerState === 'object'
+      ? info.controllerState
+      : null;
+  return applyFlx6VisualStateProjection(projection);
+}
+
 function clearLitTimer(key) {
   if (!key || !litTimers[key]) return;
   clearTimeout(litTimers[key]);
@@ -387,6 +506,7 @@ export function consumeInfo(info) {
       outcome: renderPlan.blocked ? 'blocked' : 'absent',
       detail: renderPlan.fallbackReason || renderPlan.source || 'no-render-target',
     });
+    applyInfoVisualStateProjection(info);
     return;
   }
 
@@ -404,6 +524,7 @@ export function consumeInfo(info) {
       outcome: 'target-missing',
       detail: renderPlan.targetId,
     });
+    applyInfoVisualStateProjection(info);
     return;
   }
   const visualKey = renderPlan.targetId || key;
@@ -430,6 +551,7 @@ export function consumeInfo(info) {
       outcome: 'updated',
       detail: 'delegated-jog-runtime',
     });
+    applyInfoVisualStateProjection(info);
     return;
   }
   if (type === 'cc') {
@@ -440,6 +562,7 @@ export function consumeInfo(info) {
         outcome: 'deferred',
         detail: 'waiting-for-paired-value',
       });
+      applyInfoVisualStateProjection(info);
       return;
     }
     animateContinuous(el, renderEntry, renderValue);
@@ -479,6 +602,8 @@ export function consumeInfo(info) {
       detail: type || 'unknown',
     });
   }
+
+  applyInfoVisualStateProjection(info);
 }
 
 function allTargetIdsInSVG() {

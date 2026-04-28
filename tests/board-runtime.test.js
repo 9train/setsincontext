@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { consumeInfo } from '../src/board.js';
-import { installBoardWindowBindings, isMixerGroupedKnobId } from '../src/board/runtime.js';
+import {
+  applyFlx6VisualStateProjection,
+  installBoardWindowBindings,
+  isMixerGroupedKnobId,
+} from '../src/board/runtime.js';
 import {
   heldBinaryTargets,
   jogAngle,
@@ -165,6 +169,45 @@ function createSliderFixture(id, attrs) {
   return new MockSvgElement('rect', id, {
     attrs,
     bbox: { x: 0, y: 0, width: 12, height: 24 },
+  });
+}
+
+const PAD_MODE_GROUP_IDS = Object.freeze({
+  left: Object.freeze(['hotcue_L', 'padfx_L', 'beatjump_L', 'sampler_L']),
+  right: Object.freeze(['hotcue_R', 'padfx_R', 'beatjump_R', 'sampler_R']),
+});
+const DECK_STATE_GROUP_IDS = Object.freeze({
+  left: Object.freeze(['deck_layer_alt_L', 'deck_layer_main_L', 'vinyl_L']),
+  right: Object.freeze(['deck_layer_alt_R', 'deck_layer_main_R', 'vinyl_R']),
+});
+const FLX6_VISUAL_TARGET_IDS = Object.freeze([
+  ...PAD_MODE_GROUP_IDS.left,
+  ...PAD_MODE_GROUP_IDS.right,
+  ...DECK_STATE_GROUP_IDS.left,
+  ...DECK_STATE_GROUP_IDS.right,
+]);
+
+function createTargetFixture(targetIds = FLX6_VISUAL_TARGET_IDS) {
+  const root = new MockSvgRoot();
+  targetIds.forEach((id) => {
+    root.appendChild(new MockSvgElement('g', id));
+  });
+  return root;
+}
+
+function isLit(root, id) {
+  const el = root.getElementById(id);
+  assert.ok(el, `${id} should exist in the board fixture`);
+  return el.classList.contains('lit');
+}
+
+function assertExclusiveLit(root, ids, activeId, label = '') {
+  ids.forEach((id) => {
+    assert.equal(
+      isLit(root, id),
+      id === activeId,
+      `${label}${id} lit state`,
+    );
   });
 }
 
@@ -474,6 +517,257 @@ test('physical crossfader MSB and LSB lanes still render accurately while jog cu
     });
 
     assert.equal(crossfader.getAttribute('x'), '51.2');
+  });
+});
+
+[
+  ['hotcue', 'hotcue_L'],
+  ['sampler', 'sampler_L'],
+  ['fx', 'padfx_L'],
+  ['beatjump', 'beatjump_L'],
+].forEach(([mode, activeId]) => {
+  test(`FLX6 pad-mode projection lights left ${mode} exclusively`, async () => {
+    await withBoardRuntimeEnv(async () => {
+      const root = createTargetFixture();
+      setBoardSvgRoot(root);
+
+      consumeInfo({
+        controllerState: {
+          padMode: { left: mode },
+        },
+      });
+
+      assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, activeId, 'left pad mode ');
+      assertExclusiveLit(root, PAD_MODE_GROUP_IDS.right, null, 'right pad mode ');
+    });
+  });
+});
+
+test('FLX6 pad-mode projection lights right sampler independently', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+
+    consumeInfo({
+      controllerState: {
+        padMode: { right: 'sampler' },
+      },
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.right, 'sampler_R', 'right pad mode ');
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, null, 'left pad mode ');
+  });
+});
+
+test('FLX6 pad-mode projection supports different active modes per side', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+
+    consumeInfo({
+      controllerState: {
+        padMode: { left: 'hotcue', right: 'sampler' },
+      },
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'hotcue_L', 'left pad mode ');
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.right, 'sampler_R', 'right pad mode ');
+  });
+});
+
+test('FLX6 pad-mode projection supports the same active mode on both sides', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+
+    consumeInfo({
+      controllerState: {
+        padMode: { left: 'fx', right: 'fx' },
+      },
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'padfx_L', 'left pad mode ');
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.right, 'padfx_R', 'right pad mode ');
+  });
+});
+
+test('FLX6 pad-mode projection keeps the active mode lit on repeated press and release events', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+
+    const activeState = {
+      padMode: { left: 'hotcue' },
+    };
+
+    consumeInfo({
+      type: 'noteon',
+      value: 127,
+      render: { targetId: 'hotcue_L' },
+      controllerState: activeState,
+    });
+    consumeInfo({
+      type: 'noteon',
+      value: 127,
+      render: { targetId: 'hotcue_L' },
+      controllerState: activeState,
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'hotcue_L', 'left pad mode repeated press ');
+
+    consumeInfo({
+      type: 'noteoff',
+      value: 0,
+      render: { targetId: 'hotcue_L' },
+      controllerState: activeState,
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'hotcue_L', 'left pad mode release ');
+  });
+});
+
+[
+  ['right', { jogCutter: { right: true }, jogVinylMode: { right: false } }, 'deck_layer_alt_R'],
+  ['right', { jogCutter: { right: false }, jogVinylMode: { right: false } }, 'deck_layer_main_R'],
+  ['right', { jogCutter: { right: false }, jogVinylMode: { right: true } }, 'vinyl_R'],
+  ['right', { jogCutter: { right: true }, jogVinylMode: { right: true } }, 'deck_layer_alt_R'],
+  ['left', { jogCutter: { left: true }, jogVinylMode: { left: false } }, 'deck_layer_alt_L'],
+  ['left', { jogCutter: { left: false }, jogVinylMode: { left: false } }, 'deck_layer_main_L'],
+  ['left', { jogCutter: { left: false }, jogVinylMode: { left: true } }, 'vinyl_L'],
+  ['left', { jogCutter: { left: true }, jogVinylMode: { left: true } }, 'deck_layer_alt_L'],
+].forEach(([side, controllerState, activeId]) => {
+  test(`FLX6 deck-state projection lights ${activeId} exclusively`, async () => {
+    await withBoardRuntimeEnv(async () => {
+      const root = createTargetFixture();
+      setBoardSvgRoot(root);
+
+      consumeInfo({ controllerState });
+
+      assertExclusiveLit(root, DECK_STATE_GROUP_IDS[side], activeId, `${side} deck state `);
+    });
+  });
+});
+
+test('FLX6 compact controllerVisualState projection is accepted', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+
+    consumeInfo({
+      controllerVisualState: {
+        padMode: { left: 'padfx' },
+        jogCutter: { right: true },
+      },
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'padfx_L', 'left visual pad mode ');
+    assertExclusiveLit(root, DECK_STATE_GROUP_IDS.right, 'deck_layer_alt_R', 'right visual deck state ');
+  });
+});
+
+test('FLX6 controllerState projection is accepted as a host-local fallback source', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+
+    consumeInfo({
+      controllerState: {
+        padMode: { right: 'beatjump' },
+        jogCutter: { left: false },
+        jogVinylMode: { left: true },
+      },
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.right, 'beatjump_R', 'right fallback pad mode ');
+    assertExclusiveLit(root, DECK_STATE_GROUP_IDS.left, 'vinyl_L', 'left fallback deck state ');
+  });
+});
+
+test('FLX6 controllerVisualState has priority over controllerState projection data', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+
+    consumeInfo({
+      controllerVisualState: {
+        padMode: { left: 'sampler' },
+        jogCutter: { right: true },
+        jogVinylMode: { right: false },
+      },
+      controllerState: {
+        padMode: { left: 'hotcue' },
+        jogCutter: { right: false },
+        jogVinylMode: { right: true },
+      },
+    });
+
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'sampler_L', 'priority pad mode ');
+    assertExclusiveLit(root, DECK_STATE_GROUP_IDS.right, 'deck_layer_alt_R', 'priority deck state ');
+  });
+});
+
+test('FLX6 visual-state projection mutates only board lit classes', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+    const projection = Object.freeze({
+      padMode: Object.freeze({ left: 'hotcue' }),
+      jogCutter: Object.freeze({ right: false }),
+      jogVinylMode: Object.freeze({ right: false }),
+    });
+
+    assert.equal(applyFlx6VisualStateProjection(projection), true);
+
+    assert.deepEqual(projection, {
+      padMode: { left: 'hotcue' },
+      jogCutter: { right: false },
+      jogVinylMode: { right: false },
+    });
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'hotcue_L', 'direct projection pad mode ');
+    assertExclusiveLit(root, DECK_STATE_GROUP_IDS.right, 'deck_layer_main_R', 'direct projection deck state ');
+  });
+});
+
+test('FLX6 visual-state projection coexists with normal one-target event rendering', async () => {
+  await withBoardRuntimeEnv(async () => {
+    const root = createTargetFixture([...FLX6_VISUAL_TARGET_IDS, 'play_L']);
+    setBoardSvgRoot(root);
+
+    consumeInfo({
+      type: 'noteon',
+      value: 127,
+      render: { targetId: 'play_L' },
+      controllerState: {
+        padMode: { left: 'sampler' },
+      },
+    });
+
+    assert.equal(isLit(root, 'play_L'), true);
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'sampler_L', 'one-target coexistence ');
+  });
+});
+
+test('FLX6 visual-state projection is board-local and does not send WebSocket payloads', async () => {
+  await withBoardRuntimeEnv(async (env) => {
+    const root = createTargetFixture();
+    setBoardSvgRoot(root);
+    let sendCount = 0;
+    env.window.wsClient = {
+      send() {
+        sendCount += 1;
+      },
+    };
+
+    consumeInfo({
+      controllerVisualState: {
+        padMode: { left: 'hotcue' },
+        jogCutter: { right: true },
+      },
+    });
+
+    assert.equal(sendCount, 0);
+    assertExclusiveLit(root, PAD_MODE_GROUP_IDS.left, 'hotcue_L', 'local projection ');
+    assertExclusiveLit(root, DECK_STATE_GROUP_IDS.right, 'deck_layer_alt_R', 'local projection ');
   });
 });
 
