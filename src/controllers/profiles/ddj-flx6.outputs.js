@@ -275,6 +275,15 @@ const flx6BeatFxOnOffSpecs = Object.freeze([
   Object.freeze({ unit: 2, slot: 3, channel: 6, code: 73, label: 'Beat FX unit 2 on/off slot 3' }),
 ]);
 
+const flx6BeatFxSelectSpecs = Object.freeze([
+  Object.freeze({ unit: 1, slot: 1, channel: 5, code: 112, label: 'Beat FX unit 1 select slot 1' }),
+  Object.freeze({ unit: 1, slot: 2, channel: 5, code: 113, label: 'Beat FX unit 1 select slot 2' }),
+  Object.freeze({ unit: 1, slot: 3, channel: 5, code: 114, label: 'Beat FX unit 1 select slot 3' }),
+  Object.freeze({ unit: 2, slot: 1, channel: 6, code: 112, label: 'Beat FX unit 2 select slot 1' }),
+  Object.freeze({ unit: 2, slot: 2, channel: 6, code: 113, label: 'Beat FX unit 2 select slot 2' }),
+  Object.freeze({ unit: 2, slot: 3, channel: 6, code: 114, label: 'Beat FX unit 2 select slot 3' }),
+]);
+
 function buildBeatFxOnOffOutputBindings() {
   return flx6BeatFxOnOffSpecs.map((spec) =>
     lightBinding({
@@ -288,8 +297,22 @@ function buildBeatFxOnOffOutputBindings() {
   );
 }
 
-function isBeatFxOnOffCanonical(value) {
-  return String(value || '').trim().toLowerCase() === 'beatfx.on_off';
+function buildBeatFxSelectOutputBindings() {
+  return flx6BeatFxSelectSpecs.map((spec) =>
+    lightBinding({
+      id: `beatfx.select.unit${spec.unit}.slot${spec.slot}.led`,
+      canonical: 'beatfx.select',
+      channel: spec.channel,
+      code: spec.code,
+      context: { unit: spec.unit, slot: spec.slot },
+      note: `${spec.label} LED from the FLX6 CSV MIDI-OUT rows.`,
+    })
+  );
+}
+
+function isBeatFxUnitSlotCanonical(value) {
+  const canonical = String(value || '').trim().toLowerCase();
+  return canonical === 'beatfx.on_off' || canonical === 'beatfx.select';
 }
 
 function coerceLightValue(value) {
@@ -466,6 +489,7 @@ export const flx6OutputBindings = Object.freeze([
   ...buildPadModeOutputBindings(),
   ...buildPadSurfaceOutputBindings(),
   ...buildBeatFxOnOffOutputBindings(),
+  ...buildBeatFxSelectOutputBindings(),
 ]);
 
 export const flx6OutputTargets = Object.freeze([
@@ -502,7 +526,7 @@ export function findFlx6OutputBindings(request, options = {}) {
   const scoped = exactLayer.length ? exactLayer : candidates;
 
   if (!isPadCanonicalTarget(canonicalTarget)) {
-    if (isBeatFxOnOffCanonical(canonicalTarget)) {
+    if (isBeatFxUnitSlotCanonical(canonicalTarget)) {
       const rawUnit = request && request.context && request.context.unit;
       const rawSlot = request && request.context && request.context.slot;
       const unit = Number(rawUnit);

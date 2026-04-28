@@ -649,6 +649,224 @@ test('buildFlx6OutputMessages does not resolve Beat FX on/off LED when only unit
   assert.deepEqual(messages, []);
 });
 
+test('buildFlx6OutputMessages resolves Beat FX unit 1 slot 1 select LED (FX1-1)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { unit: 1, slot: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 200,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 5, code: 112, key: 'noteon:5:112' },
+    canonicalTarget: 'beatfx.select',
+    context: { unit: 1, slot: 1 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.select.unit1.slot1.led',
+    timestamp: 200,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 1 slot 2 select LED (FX1-2)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { unit: 1, slot: 2 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 201,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 5, code: 113, key: 'noteon:5:113' },
+    canonicalTarget: 'beatfx.select',
+    context: { unit: 1, slot: 2 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.select.unit1.slot2.led',
+    timestamp: 201,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 1 slot 3 select LED (FX1-3)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: false,
+    context: { unit: 1, slot: 3 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 202,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 5, code: 114, key: 'noteon:5:114' },
+    canonicalTarget: 'beatfx.select',
+    context: { unit: 1, slot: 3 },
+    value: 0,
+    outputKind: 'light',
+    bindingId: 'beatfx.select.unit1.slot3.led',
+    timestamp: 202,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 2 slot 1 select LED (FX2-1)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { unit: 2, slot: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 203,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 6, code: 112, key: 'noteon:6:112' },
+    canonicalTarget: 'beatfx.select',
+    context: { unit: 2, slot: 1 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.select.unit2.slot1.led',
+    timestamp: 203,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 2 slot 2 select LED (FX2-2)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { unit: 2, slot: 2 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 204,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 6, code: 113, key: 'noteon:6:113' },
+    canonicalTarget: 'beatfx.select',
+    context: { unit: 2, slot: 2 },
+    value: 127,
+    outputKind: 'light',
+    bindingId: 'beatfx.select.unit2.slot2.led',
+    timestamp: 204,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages resolves Beat FX unit 2 slot 3 select LED (FX2-3)', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: false,
+    context: { unit: 2, slot: 3 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 205,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, [{
+    target: { kind: 'light', channel: 6, code: 114, key: 'noteon:6:114' },
+    canonicalTarget: 'beatfx.select',
+    context: { unit: 2, slot: 3 },
+    value: 0,
+    outputKind: 'light',
+    bindingId: 'beatfx.select.unit2.slot3.led',
+    timestamp: 205,
+    profileId: flx6Profile.id,
+  }]);
+});
+
+test('buildFlx6OutputMessages does not resolve Beat FX select LED for wrong unit', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { unit: 99, slot: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 206,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
+test('buildFlx6OutputMessages does not resolve Beat FX select LED for wrong slot', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { unit: 1, slot: 99 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 207,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
+test('buildFlx6OutputMessages does not silently pick first Beat FX select candidate when context is missing', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 208,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
+test('buildFlx6OutputMessages does not resolve Beat FX select LED when only unit is provided', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { unit: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 209,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
+test('buildFlx6OutputMessages does not resolve Beat FX select LED when only slot is provided', () => {
+  const messages = buildFlx6OutputMessages([{
+    canonicalTarget: 'beatfx.select',
+    value: true,
+    context: { slot: 1 },
+  }], {
+    profileId: flx6Profile.id,
+    timestamp: 210,
+    controllerState: createFlx6RuntimeState(),
+    bindings: flx6Profile.outputs.bindings,
+  });
+
+  assert.deepEqual(messages, []);
+});
+
 test('flx6 handleOutput turns canonical requests into real LED messages', () => {
   const state = createFlx6RuntimeState();
 
