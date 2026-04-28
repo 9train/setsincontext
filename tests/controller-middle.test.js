@@ -274,7 +274,7 @@ test('resolveFlx6InputEvent turns deck-control status rows into authoritative de
   assert.equal(resolved.debug.stateAfter.truth.deckOwnership.left.status, 'official');
 });
 
-test('resolveFlx6InputEvent gives shifted browser and view lanes official semantics even when the board has no browser target', () => {
+test('resolveFlx6InputEvent gives shifted browser and view lanes official semantics and resolves to official render targets', () => {
   const state = createControllerState({ profileId: flx6Profile.id });
 
   const shiftedBrowseTurn = resolveFromRaw(createFlx6RawInput({
@@ -314,18 +314,18 @@ test('resolveFlx6InputEvent gives shifted browser and view lanes official semant
   assert.equal(shiftedBrowseTurn.semantic.action, 'turn');
   assert.equal(shiftedBrowseTurn.semantic.meaning, 'browser_scroll_shifted');
   assert.equal(shiftedBrowseTurn.semantic.truthStatus, 'official');
-  assert.equal(shiftedBrowseTurn.render.targetId, null);
-  assert.equal(shiftedBrowseTurn.render.truthStatus, 'blocked');
+  assert.equal(shiftedBrowseTurn.render.targetId, 'browser_scroll');
+  assert.equal(shiftedBrowseTurn.render.truthStatus, 'official');
 
   assert.equal(viewLongPress.semantic.family, 'browser');
   assert.equal(viewLongPress.semantic.action, 'long_press');
   assert.equal(viewLongPress.semantic.meaning, 'browser_view_long_press');
-  assert.equal(viewLongPress.render.truthStatus, 'blocked');
+  assert.equal(viewLongPress.render.truthStatus, 'official');
 
   assert.equal(shiftedView.semantic.family, 'browser');
   assert.equal(shiftedView.semantic.action, 'press');
   assert.equal(shiftedView.semantic.meaning, 'browser_view_shifted');
-  assert.equal(shiftedView.render.truthStatus, 'blocked');
+  assert.equal(shiftedView.render.truthStatus, 'official');
 });
 
 test('resolveFlx6InputEvent keeps shifted load lanes on the official FLX6 path with deck-specific meaning and render targets', () => {

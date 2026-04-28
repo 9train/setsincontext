@@ -127,6 +127,18 @@ const flx6RenderTargets = Object.freeze({
   ...buildPadModeRenderTargets('R', 'right'),
   ...buildPadRenderTargets('L', 'left'),
   ...buildPadRenderTargets('R', 'right'),
+  'deck.left.transport.shift': 'shift_L',
+  'deck.right.transport.shift': 'shift_R',
+  'deck.left.loop.reloop_exit': 'reloop_exit_L',
+  'deck.right.loop.reloop_exit': 'reloop_exit_R',
+  'deck.left.transport.layer.status.main': 'decks_L',
+  'deck.left.transport.layer.status.alternate': 'decks_L',
+  'deck.right.transport.layer.status.main': 'decks_R',
+  'deck.right.transport.layer.status.alternate': 'decks_R',
+  'browser.scroll': 'browser_scroll',
+  'browser.push': 'browser_push',
+  'browser.back': 'browser_back',
+  'browser.view': 'browser_view',
 });
 
 const flx6SurfaceAliases = Object.freeze({
@@ -354,6 +366,12 @@ function buildDeckTargets(side, sideLabel) {
       renderKind: 'button',
     },
     {
+      targetId: `shift_${side}`,
+      canonicalTarget: `deck.${sideLabel}.transport.shift`,
+      label: `${deckLabel} Shift`,
+      renderKind: 'button',
+    },
+    {
       targetId: `loop_in_${side}`,
       canonicalTarget: `deck.${sideLabel}.loop.in`,
       label: `${deckLabel} Loop In`,
@@ -381,6 +399,12 @@ function buildDeckTargets(side, sideLabel) {
       targetId: `loop_memory_${side}`,
       canonicalTarget: `deck.${sideLabel}.loop.memory`,
       label: `${deckLabel} Cue/Loop Memory`,
+      renderKind: 'button',
+    },
+    {
+      targetId: `reloop_exit_${side}`,
+      canonicalTarget: `deck.${sideLabel}.loop.reloop_exit`,
+      label: `${deckLabel} Reloop/Exit`,
       renderKind: 'button',
     },
     {
@@ -499,6 +523,36 @@ function buildBeatFxTargets() {
   ];
 }
 
+function buildBrowserTargets() {
+  return [
+    {
+      targetId: 'browser_scroll',
+      canonicalTarget: 'browser.scroll',
+      label: 'Browser Scroll',
+      aliases: ['browser_scoll_knob'],
+      renderKind: 'encoder',
+    },
+    {
+      targetId: 'browser_push',
+      canonicalTarget: 'browser.push',
+      label: 'Browser Push',
+      renderKind: 'button',
+    },
+    {
+      targetId: 'browser_back',
+      canonicalTarget: 'browser.back',
+      label: 'Browser Back',
+      renderKind: 'button',
+    },
+    {
+      targetId: 'browser_view',
+      canonicalTarget: 'browser.view',
+      label: 'Browser View',
+      renderKind: 'button',
+    },
+  ];
+}
+
 export const flx6Ui = Object.freeze({
   renderTargets: flx6RenderTargets,
   surfaceAliases: flx6SurfaceAliases,
@@ -514,6 +568,7 @@ export const flx6Ui = Object.freeze({
     },
     ...buildBeatFxTargets(),
     ...buildLoadTargets(),
+    ...buildBrowserTargets(),
     ...Array.from({ length: 4 }, (_, index) => buildChannelTargets(index + 1)).flat(),
     ...buildDeckTargets('L', 'left'),
     ...buildDeckTargets('R', 'right'),

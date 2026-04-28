@@ -614,8 +614,8 @@ test('localStorage learned maps stay draft diagnostic-only even if they claim of
 test('raw learned-map fallback is suppressed when official controller meaning exists but no board render target does', () => {
   const rawMap = [{ key: 'cc:7:64', target: 'jog_L' }];
   const info = {
-    canonicalTarget: 'browser.scroll',
-    mappingId: 'browser.scroll.primary',
+    canonicalTarget: 'browser.unrendered_control',
+    mappingId: 'browser.unrendered_control.primary',
     type: 'cc',
     ch: 7,
     controller: 64,
@@ -627,8 +627,8 @@ test('raw learned-map fallback is suppressed when official controller meaning ex
     authority: 'official-missing',
     source: 'no-official-render-target',
     fallbackReason: 'official-meaning-without-render-target',
-    canonicalTarget: 'browser.scroll',
-    mappingId: 'browser.scroll.primary',
+    canonicalTarget: 'browser.unrendered_control',
+    mappingId: 'browser.unrendered_control.primary',
     context: null,
     profileId: null,
     ownership: 'official',

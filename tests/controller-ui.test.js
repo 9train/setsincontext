@@ -6,6 +6,7 @@ import {
   resolveProfileEditorTarget,
   resolveProfileRenderTarget,
 } from '../src/controllers/core/ui.js';
+import flx6InputMappings from '../src/controllers/profiles/ddj-flx6.mappings.js';
 
 test('profile-owned render targets resolve canonical board surfaces', () => {
   assert.equal(resolveProfileRenderTarget('mixer.crossfader'), 'xfader_slider');
@@ -106,4 +107,29 @@ test('render kinds come from profile-owned UI metadata before regex fallbacks', 
   assert.equal(getProfileRenderKind('headphone_cue_1'), 'button');
   assert.equal(getProfileRenderKind('trim_1'), 'knob');
   assert.equal(getProfileRenderKind('jog_L_touch'), 'jog');
+});
+
+test('profile-owned render targets resolve shift, reloop/exit, and browser controls', () => {
+  assert.equal(resolveProfileRenderTarget('deck.left.transport.shift'), 'shift_L');
+  assert.equal(resolveProfileRenderTarget('deck.right.transport.shift'), 'shift_R');
+  assert.equal(resolveProfileRenderTarget('deck.left.loop.reloop_exit'), 'reloop_exit_L');
+  assert.equal(resolveProfileRenderTarget('deck.right.loop.reloop_exit'), 'reloop_exit_R');
+  assert.equal(resolveProfileRenderTarget('browser.scroll'), 'browser_scroll');
+  assert.equal(resolveProfileRenderTarget('browser.push'), 'browser_push');
+  assert.equal(resolveProfileRenderTarget('browser.back'), 'browser_back');
+  assert.equal(resolveProfileRenderTarget('browser.view'), 'browser_view');
+});
+
+test('all official FLX6 input mappings with canonical meaning resolve to an official render target', () => {
+  const missing = [];
+  const seen = new Set();
+  for (const binding of flx6InputMappings) {
+    if (!binding.canonical) continue;
+    if (seen.has(binding.canonical)) continue;
+    seen.add(binding.canonical);
+    if (!resolveProfileRenderTarget(binding.canonical)) {
+      missing.push(binding.canonical);
+    }
+  }
+  assert.deepEqual(missing, [], `Missing official render targets for: ${missing.join(', ')}`);
 });

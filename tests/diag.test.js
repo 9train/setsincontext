@@ -159,25 +159,33 @@ test('debugger snapshot exposes the official FLX6 truth chain for a sampler pad 
 });
 
 test('debugger snapshot keeps a blocked official render distinct from the official semantic path', () => {
-  const state = createControllerState({ profileId: flx6Profile.id });
-  const resolved = resolveFromRaw(createFlx6RawInput({
-    interaction: 'cc',
-    channel: 7,
-    code: 100,
+  // Construct a synthetic event with official canonical meaning but no board render target.
+  // browser.scroll now has an official render target (browser_scroll); this test uses a
+  // deliberately-unrendered fake canonical to keep verifying the semantic/render separation.
+  const syntheticEvent = {
+    type: 'cc',
+    ch: 7,
+    controller: 100,
+    d1: 100,
+    d2: 65,
     value: 65,
-    data1: 100,
-    data2: 65,
-    key: 'cc:7:100',
-    bytes: [0xB6, 100, 65],
-  }), state);
+    canonicalTarget: 'browser.unrendered_control',
+    mappingId: 'browser.unrendered_control.primary',
+    matchedBinding: {
+      id: 'browser.unrendered_control.primary',
+      canonicalTarget: 'browser.unrendered_control',
+    },
+    semantic: {
+      truthStatus: 'official',
+      meaning: 'browser.unrendered_control',
+      family: 'browser',
+      action: 'cc',
+    },
+  };
 
-  const snapshot = buildDebuggerEventSnapshot(attachBoardRender(resolved, {
-    applied: false,
-    outcome: 'blocked',
-    detail: 'no-official-render-target',
-  }));
+  const snapshot = buildDebuggerEventSnapshot(attachBoardRender(syntheticEvent));
 
-  assert.equal(snapshot.semantic.meaningLabel, 'Shifted Browser Scroll');
+  assert.equal(snapshot.semantic.meaningLabel, 'Browser Unrendered Control');
   assert.equal(snapshot.semantic.truthStatus, 'official');
   assert.equal(snapshot.binding.status, 'official');
   assert.equal(snapshot.render.targetId, null);
