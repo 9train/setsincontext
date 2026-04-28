@@ -7,13 +7,67 @@ import {
   getEventJogLane,
   rememberPairedValue,
   setBeatFxState,
+  setJogCutterState,
+  setJogVinylModeState,
   setTemporaryState,
 } from '../src/controllers/core/state.js';
 import {
   applyFlx6InputState,
   createFlx6RuntimeState,
   flx6RuntimeHooks,
+  handleInput,
 } from '../src/controllers/profiles/ddj-flx6.script.js';
+import { flx6Profile } from '../src/controllers/profiles/ddj-flx6.js';
+
+function createLiveFlx6ButtonEvent({
+  canonicalTarget,
+  mappingId,
+  rawTarget,
+  channel,
+  code,
+  context = null,
+  interaction = 'noteon',
+  timestamp = 100,
+}) {
+  const active = interaction !== 'noteoff';
+  const value = active ? 127 : 0;
+  return {
+    eventType: 'normalized_input',
+    transport: 'midi',
+    profileId: flx6Profile.id,
+    sourceId: 'Pioneer DDJ-FLX6',
+    deviceName: 'Pioneer DDJ-FLX6',
+    mapped: true,
+    canonicalTarget,
+    mappingId,
+    rawTarget,
+    context,
+    valueShape: 'binary',
+    interaction,
+    channel,
+    code,
+    value,
+    compatValue: value,
+    semanticValue: value,
+    data1: code,
+    data2: value,
+    key: `${interaction}:${channel}:${code}`,
+    timestamp,
+    raw: null,
+    feel: null,
+    type: interaction,
+    ch: channel,
+    d1: code,
+    d2: value,
+  };
+}
+
+function handleLiveFlx6Input(state, event) {
+  return handleInput(null, event, state, {
+    profile: flx6Profile,
+    profileId: flx6Profile.id,
+  });
+}
 
 test('createControllerState keeps compatibility buckets while exposing explicit truth descriptors', () => {
   const state = createControllerState({
@@ -50,6 +104,113 @@ test('createFlx6RuntimeState keeps FLX6 pad startup unknown until hardware truth
   assert.equal(state.truth.padMode.left.value, null);
   assert.equal(state.truth.padMode.right.status, 'unknown');
   assert.equal(state.truth.padMode.right.value, null);
+});
+
+test('handleInput commits FLX6 pad-mode state once and keeps pad modes persistent', () => {
+  const state = createFlx6RuntimeState();
+
+  const hotCueResult = handleLiveFlx6Input(state, createLiveFlx6ButtonEvent({
+    canonicalTarget: 'deck.left.pad_mode.hotcue',
+    mappingId: 'deck.left.pad_mode.hotcue.main.press',
+    rawTarget: 'hotcue_L',
+    channel: 1,
+    code: 27,
+    context: { deckLayer: 'main' },
+    timestamp: 100,
+  }));
+
+  assert.equal(hotCueResult.handled, 1);
+  assert.equal(state.padMode.left, 'hotcue');
+  assert.equal(state.padMode.right, null);
+
+  const samplerPress = createLiveFlx6ButtonEvent({
+    canonicalTarget: 'deck.left.pad_mode.sampler',
+    mappingId: 'deck.left.pad_mode.sampler.main.press',
+    rawTarget: 'sampler_L',
+    channel: 1,
+    code: 34,
+    context: { deckLayer: 'main' },
+    timestamp: 101,
+  });
+  handleLiveFlx6Input(state, samplerPress);
+
+  assert.equal(state.padMode.left, 'sampler');
+  assert.equal(state.padMode.right, null);
+
+  handleLiveFlx6Input(state, {
+    ...samplerPress,
+    timestamp: 102,
+  });
+
+  assert.equal(state.padMode.left, 'sampler');
+  assert.equal(state.padMode.right, null);
+
+  handleLiveFlx6Input(state, createLiveFlx6ButtonEvent({
+    canonicalTarget: 'deck.left.pad_mode.sampler',
+    mappingId: 'deck.left.pad_mode.sampler.main.release',
+    rawTarget: 'sampler_L',
+    channel: 1,
+    code: 34,
+    context: { deckLayer: 'main' },
+    interaction: 'noteoff',
+    timestamp: 103,
+  }));
+
+  assert.equal(state.padMode.left, 'sampler');
+  assert.equal(state.padMode.right, null);
+});
+
+test('handleInput toggles FLX6 Jog Cutter state exactly once per live press', () => {
+  const state = createFlx6RuntimeState();
+  setJogCutterState(state, {
+    side: 'left',
+    active: false,
+    status: 'official',
+    timestamp: 200,
+  });
+  const original = state.jogCutter.left;
+
+  const result = handleLiveFlx6Input(state, createLiveFlx6ButtonEvent({
+    canonicalTarget: 'deck.left.jog.cutter',
+    mappingId: 'deck.left.jog.cutter.main.press',
+    rawTarget: 'jogcut_x5F_L',
+    channel: 1,
+    code: 28,
+    context: { deckLayer: 'main' },
+    timestamp: 201,
+  }));
+
+  assert.equal(original, false);
+  assert.equal(state.jogCutter.left, true);
+  assert.notEqual(state.jogCutter.left, original);
+  assert.equal(state.truth.jog.left.jogCutterEnabled.status, 'inferred');
+  assert.equal(result.events[0].debug.stateBefore.jogCutter.left, false);
+  assert.equal(result.events[0].debug.stateAfter.jogCutter.left, true);
+});
+
+test('handleInput toggles FLX6 vinyl-mode state exactly once per live press', () => {
+  const state = createFlx6RuntimeState();
+  setJogVinylModeState(state, {
+    side: 'left',
+    active: false,
+    status: 'official',
+    timestamp: 300,
+  });
+
+  const result = handleLiveFlx6Input(state, createLiveFlx6ButtonEvent({
+    canonicalTarget: 'deck.left.jog.vinyl_mode',
+    mappingId: 'deck.left.jog.vinyl_mode.main.shifted.press',
+    rawTarget: 'jogcut_x5F_L',
+    channel: 1,
+    code: 23,
+    context: { deckLayer: 'main', shifted: true },
+    timestamp: 301,
+  }));
+
+  assert.equal(state.jogVinylMode.left, true);
+  assert.equal(state.truth.jog.left.vinylMode.status, 'inferred');
+  assert.equal(result.events[0].debug.stateBefore.jogVinylMode.left, false);
+  assert.equal(result.events[0].debug.stateAfter.jogVinylMode.left, true);
 });
 
 test('getEventJogLane reuses the official FLX6 jog codes before normalization finishes', () => {
