@@ -19,6 +19,8 @@ const JOG_CALIBRATION_CONTROLLER_ID = 'ddj-flx6';
 const JOG_CALIBRATION_MODES = Object.freeze(['normal', 'vinyl', 'jog_cutter']);
 const JOG_CALIBRATION_SURFACES = Object.freeze(['side', 'top_touch']);
 const JOG_CALIBRATION_DEFAULT_SCOPE = 'default';
+const JOG_CUTTER_ZONE_COUNT = 6;
+const JOG_CUTTER_STEP_DELTA = 6;
 
 const jogMotionProfiles = Object.freeze({
   default: Object.freeze({
@@ -857,6 +859,12 @@ function createSideState() {
     jogVinylMode: null,
     renderDirty: false,
     el: null,
+    jogCutterOverlayEl: null,
+    jogCutterZones: [],
+    jogCutterLabels: [],
+    jogCutterLitZones: new Set(),
+    jogCutterCurrentZone: 1,
+    jogCutterDeltaRemainder: 0,
   };
 }
 
@@ -874,6 +882,132 @@ function getEl(id) {
     if (el) return el;
   }
   return null;
+}
+
+function normalizeJogCutterZone(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const integer = Math.trunc(numeric);
+  if (integer < 1 || integer > JOG_CUTTER_ZONE_COUNT) return null;
+  return integer;
+}
+
+function wrapJogCutterZone(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return ((((Math.trunc(numeric) - 1) % JOG_CUTTER_ZONE_COUNT) + JOG_CUTTER_ZONE_COUNT) % JOG_CUTTER_ZONE_COUNT) + 1;
+}
+
+function clearJogCutterTrail(sideState) {
+  if (!sideState) return;
+  sideState.jogCutterLitZones.clear();
+  sideState.jogCutterCurrentZone = 1;
+  sideState.jogCutterDeltaRemainder = 0;
+}
+
+function setJogCutterEnabled(sideState, enabled, known = true) {
+  if (!sideState) return;
+  sideState.jogCutterKnown = known === true;
+  sideState.jogCutterActive = enabled === true;
+  if (!sideState.jogCutterActive) clearJogCutterTrail(sideState);
+}
+
+function resolveJogCutterEls(sideState, side) {
+  if (!sideState || (side !== 'L' && side !== 'R')) return;
+
+  sideState.jogCutterOverlayEl = getEl(`jog_cutter_overlay_${side}`);
+  sideState.jogCutterZones = Array.from(
+    { length: JOG_CUTTER_ZONE_COUNT },
+    (_, index) => getEl(`jog_cutter_zone_${side}_${index + 1}`),
+  );
+  sideState.jogCutterLabels = Array.from(
+    { length: JOG_CUTTER_ZONE_COUNT },
+    (_, index) => getEl(`jog_cutter_label_${side}_${index + 1}`),
+  );
+}
+
+function applyJogCutterElementState(el, zone, enabled, lit, current) {
+  if (!el || !el.classList) return;
+
+  el.classList.toggle('is-lit', enabled && lit);
+  el.classList.toggle('is-current', enabled && current);
+  if (el.dataset) {
+    el.dataset.jogCutterZone = String(zone);
+    el.dataset.jogCutterLit = enabled && lit ? 'true' : 'false';
+    el.dataset.jogCutterCurrent = enabled && current ? 'true' : 'false';
+  }
+}
+
+function updateJogCutterOverlayState(sideState, side) {
+  if (!sideState) return;
+  if (!sideState.jogCutterOverlayEl) resolveJogCutterEls(sideState, side);
+
+  const enabled = !!(sideState.jogCutterKnown && sideState.jogCutterActive);
+  const overlay = sideState.jogCutterOverlayEl;
+  if (overlay && overlay.classList) {
+    overlay.classList.toggle('is-visible', enabled);
+    if (overlay.dataset) {
+      overlay.dataset.jogCutterActive = enabled ? 'true' : 'false';
+      overlay.dataset.jogCutterCurrentZone = String(sideState.jogCutterCurrentZone || 1);
+      overlay.dataset.jogCutterLitZones = Array.from(sideState.jogCutterLitZones).sort((a, b) => a - b).join(',');
+    }
+    if (overlay.style) overlay.style.display = enabled ? '' : 'none';
+  }
+
+  for (let index = 0; index < JOG_CUTTER_ZONE_COUNT; index += 1) {
+    const zone = index + 1;
+    const lit = sideState.jogCutterLitZones.has(zone);
+    const current = zone === sideState.jogCutterCurrentZone && lit;
+    applyJogCutterElementState(sideState.jogCutterZones[index], zone, enabled, lit, current);
+    applyJogCutterElementState(sideState.jogCutterLabels[index], zone, enabled, lit, current);
+  }
+}
+
+function lightCurrentJogCutterZone(sideState) {
+  if (!sideState || !sideState.jogCutterActive) return;
+  const zone = wrapJogCutterZone(sideState.jogCutterCurrentZone || 1);
+  sideState.jogCutterCurrentZone = zone;
+  sideState.jogCutterLitZones.add(zone);
+}
+
+function advanceJogCutterZones(sideState, delta) {
+  if (!sideState || !sideState.jogCutterActive || !sideState.touchActive) return;
+  const numericDelta = Number(delta) || 0;
+  if (numericDelta === 0) return;
+
+  sideState.jogCutterDeltaRemainder += numericDelta;
+  while (Math.abs(sideState.jogCutterDeltaRemainder) >= JOG_CUTTER_STEP_DELTA) {
+    const direction = sideState.jogCutterDeltaRemainder > 0 ? 1 : -1;
+    sideState.jogCutterCurrentZone = wrapJogCutterZone(sideState.jogCutterCurrentZone + direction);
+    lightCurrentJogCutterZone(sideState);
+    sideState.jogCutterDeltaRemainder -= direction * JOG_CUTTER_STEP_DELTA;
+  }
+}
+
+function buildJogCutterSnapshot(sideState) {
+  if (!sideState || !sideState.jogCutterActive) return null;
+  return Object.freeze({
+    active: true,
+    currentZone: sideState.jogCutterCurrentZone || 1,
+    litZones: Object.freeze(Array.from(sideState.jogCutterLitZones).sort((a, b) => a - b)),
+  });
+}
+
+function applyJogCutterSnapshot(sideState, snapshot) {
+  const source = snapshot && typeof snapshot === 'object' ? snapshot : null;
+  if (!source) return false;
+
+  setJogCutterEnabled(sideState, source.active === true, true);
+  const currentZone = normalizeJogCutterZone(source.currentZone);
+  if (currentZone) sideState.jogCutterCurrentZone = currentZone;
+  sideState.jogCutterLitZones.clear();
+  if (Array.isArray(source.litZones)) {
+    source.litZones.forEach((zone) => {
+      const normalized = normalizeJogCutterZone(zone);
+      if (normalized) sideState.jogCutterLitZones.add(normalized);
+    });
+  }
+  return true;
 }
 
 function normalizeJogTargetId(target) {
@@ -905,9 +1039,33 @@ function getJogSideFromCanonicalInfo(info) {
 
   if (canonicalTarget === 'deck.left.jog.motion' || canonicalTarget === 'deck.left.jog.touch') return 'L';
   if (canonicalTarget === 'deck.right.jog.motion' || canonicalTarget === 'deck.right.jog.touch') return 'R';
+  if (canonicalTarget === 'deck.left.jog.cutter' || canonicalTarget === 'deck.left.jog.vinyl_mode') return 'L';
+  if (canonicalTarget === 'deck.right.jog.cutter' || canonicalTarget === 'deck.right.jog.vinyl_mode') return 'R';
   if (mappingId.startsWith('deck.left.jog.motion') || mappingId.startsWith('deck.left.jog.touch')) return 'L';
   if (mappingId.startsWith('deck.right.jog.motion') || mappingId.startsWith('deck.right.jog.touch')) return 'R';
+  if (mappingId.startsWith('deck.left.jog.cutter') || mappingId.startsWith('deck.left.jog.vinyl_mode')) return 'L';
+  if (mappingId.startsWith('deck.right.jog.cutter') || mappingId.startsWith('deck.right.jog.vinyl_mode')) return 'R';
   return null;
+}
+
+function isJogCutterControlEvent(info) {
+  const canonicalTarget = String(info && info.canonicalTarget || '').toLowerCase();
+  const mappingId = String(info && info.mappingId || '').toLowerCase();
+  return canonicalTarget === 'deck.left.jog.cutter'
+    || canonicalTarget === 'deck.right.jog.cutter'
+    || mappingId.startsWith('deck.left.jog.cutter')
+    || mappingId.startsWith('deck.right.jog.cutter');
+}
+
+function hasControllerJogCutterTruth(info, side) {
+  const sideKey = getSideKey(side);
+  const controllerState = info && info.controllerState;
+  return !!(
+    sideKey
+    && controllerState
+    && controllerState.jogCutter
+    && hasOwn(controllerState.jogCutter, sideKey)
+  );
 }
 
 function applyRotation(el, ang) {
@@ -1373,7 +1531,9 @@ function findJogSide(info, { allowUnifiedMapSideLookup = false, mapEntries = nul
   return getJogSideFromUnifiedMap(info, mapEntries);
 }
 
-function updateJogVisualState(sideState) {
+function updateJogVisualState(sideState, side = null) {
+  if (side) updateJogCutterOverlayState(sideState, side);
+
   const el = sideState.el;
   if (!el) return;
 
@@ -1421,7 +1581,7 @@ function buildJogVisualSnapshot(side, sideState, info, now, authoredAt = undefin
       ? Number(info.timestamp)
       : now);
 
-  return {
+  const snapshot = {
     side,
     angle: roundJogNumber(sideState.angle),
     vel: roundJogNumber(sideState.vel),
@@ -1433,6 +1593,9 @@ function buildJogVisualSnapshot(side, sideState, info, now, authoredAt = undefin
     authoredAt: timestamp,
     frameMs: JOG_RENDER_FRAME_MS,
   };
+  const jogCutter = buildJogCutterSnapshot(sideState);
+  if (jogCutter) snapshot.jogCutter = jogCutter;
+  return snapshot;
 }
 
 function advanceJogStateForAge(sideState, visual, now) {
@@ -1481,11 +1644,9 @@ function syncSideStateFromControllerState(sideState, side, info) {
 
   const jogCutter = getBooleanState(controllerState.jogCutter, sideKey);
   if (jogCutter === null) {
-    sideState.jogCutterKnown = false;
-    sideState.jogCutterActive = false;
+    setJogCutterEnabled(sideState, false, false);
   } else if (typeof jogCutter === 'boolean') {
-    sideState.jogCutterKnown = true;
-    sideState.jogCutterActive = jogCutter;
+    setJogCutterEnabled(sideState, jogCutter, true);
   }
 
   const jogVinylMode = getBooleanState(controllerState.jogVinylMode, sideKey);
@@ -1500,6 +1661,7 @@ function syncSideStateFromControllerState(sideState, side, info) {
 
 function applyAuthoritativeJogVisual(sideState, info, visual, now, feelConfig) {
   const fallbackProfile = getJogLaneProfile(visual && visual.lane, feelConfig);
+  const hasJogCutterSnapshot = applyJogCutterSnapshot(sideState, visual && visual.jogCutter);
   sideState.angle = Number.isFinite(Number(visual.angle)) ? Number(visual.angle) : sideState.angle;
   sideState.vel = Number.isFinite(Number(visual.vel)) ? Number(visual.vel) : 0;
   sideState.calibratedMotion = false;
@@ -1515,13 +1677,13 @@ function applyAuthoritativeJogVisual(sideState, info, visual, now, feelConfig) {
     || (sideState.touchActive ? 'touch' : null);
 
   if (sideState.motionLane === 'jog_cutter') {
-    sideState.jogCutterKnown = true;
-    sideState.jogCutterActive = true;
+    if (!hasJogCutterSnapshot) setJogCutterEnabled(sideState, true, true);
+    lightCurrentJogCutterZone(sideState);
   }
 
   advanceJogStateForAge(sideState, visual, now);
-  if (sideState.el) applyRotation(sideState.el, sideState.angle);
-  updateJogVisualState(sideState);
+  if (sideState.el && sideState.motionLane !== 'jog_cutter') applyRotation(sideState.el, sideState.angle);
+  updateJogVisualState(sideState, visual.side || null);
   sideState.renderDirty = false;
   setInfoJogVisual(info, buildJogVisualSnapshot(visual.side || null, sideState, info, now, now));
 }
@@ -1550,8 +1712,10 @@ export function installJogRuntime({
   function resolveJogEls() {
     S.L.el = getEl('jog_L');
     S.R.el = getEl('jog_R');
-    updateJogVisualState(S.L);
-    updateJogVisualState(S.R);
+    resolveJogCutterEls(S.L, 'L');
+    resolveJogCutterEls(S.R, 'R');
+    updateJogVisualState(S.L, 'L');
+    updateJogVisualState(S.R, 'R');
   }
 
   function scheduleTick() {
@@ -1614,6 +1778,11 @@ export function installJogRuntime({
       ? (normalizeTouchLane(lane) || sideState.touchLane || 'touch')
       : null;
 
+    if (sideState.touchActive && sideState.jogCutterActive) {
+      if (!wasTouchActive) sideState.jogCutterDeltaRemainder = 0;
+      lightCurrentJogCutterZone(sideState);
+    }
+
     if (wasTouchActive && !sideState.touchActive && isScratchLikeMotionMode(sideState.motionMode)) {
       const releaseLane = resolveEffectiveJogLane(null, sideState, feelConfig);
       const releaseProfile = getJogLaneProfile(releaseLane, feelConfig);
@@ -1624,11 +1793,11 @@ export function installJogRuntime({
         : 'idle';
     }
 
-    updateJogVisualState(sideState);
+    updateJogVisualState(sideState, side);
     if (Math.abs(sideState.vel) >= JOG_MIN_ACTIVE_VELOCITY) scheduleTick();
   }
 
-  function handleJogMotion(sideState, motion) {
+  function handleJogMotion(side, sideState, motion) {
     const delta = Number(motion && motion.delta) || 0;
     const inputLane = normalizeMotionLane(motion && motion.inputLane) || JOG_DEFAULT_LANE;
     const effectiveLane = normalizeMotionLane(motion && motion.effectiveLane) || inputLane;
@@ -1640,6 +1809,20 @@ export function installJogRuntime({
     sideState.motionMode = profile.motionMode;
     sideState.calibratedMotion = calibratedMotion;
     sideState.damping = profile.damping;
+
+    if (effectiveLane === 'jog_cutter') {
+      setJogCutterEnabled(sideState, true, true);
+      sideState.vel = 0;
+      sideState.calibratedMotion = false;
+      sideState.renderDirty = false;
+      if (sideState.touchActive) {
+        lightCurrentJogCutterZone(sideState);
+        advanceJogCutterZones(sideState, delta);
+      }
+      updateJogVisualState(sideState, side);
+      return;
+    }
+
     sideState.angle += delta * profile.directScale;
     if (calibratedMotion) {
       sideState.vel = 0;
@@ -1656,7 +1839,7 @@ export function installJogRuntime({
       scheduleTick();
     }
 
-    updateJogVisualState(sideState);
+    updateJogVisualState(sideState, side);
   }
 
   function onEvent(info) {
@@ -1685,6 +1868,10 @@ export function installJogRuntime({
 
     const j = S[side];
     syncSideStateFromControllerState(j, side, info);
+    if (isJogCutterControlEvent(info) && !hasControllerJogCutterTruth(info, side) && isBinaryEventActive(info)) {
+      setJogCutterEnabled(j, !j.jogCutterActive, true);
+    }
+    updateJogCutterOverlayState(j, side);
 
     const authoritative = getAuthoritativeJogVisual(info);
     const lane = getEventJogLane(info);
@@ -1717,7 +1904,7 @@ export function installJogRuntime({
         calibrationReason: authoritativeReason,
       });
       if (!j.el) resolveJogEls();
-      if (!j.el) return;
+      if (!j.el && !j.jogCutterOverlayEl) return;
       applyAuthoritativeJogVisual(j, info, authoritative, Number(now()) || 0, getFeelConfig?.());
       info[JOG_EVENT_HANDLED_FLAG] = true;
       if (Math.abs(j.vel) >= JOG_MIN_ACTIVE_VELOCITY) scheduleTick();
@@ -1741,8 +1928,8 @@ export function installJogRuntime({
       });
       handleJogTouch(side, j, info, lane);
       if (!j.el) resolveJogEls();
-      if (!j.el) return;
-      updateJogVisualState(j);
+      if (!j.el && !j.jogCutterOverlayEl) return;
+      updateJogVisualState(j, side);
       setInfoJogVisual(info, buildJogVisualSnapshot(side, j, info, Number(now()) || 0));
       info[JOG_EVENT_HANDLED_FLAG] = true;
       return;
@@ -1766,6 +1953,8 @@ export function installJogRuntime({
         calibrationAction: S.calibration.active ? 'ignored' : null,
         calibrationReason: S.calibration.active ? nonCcReason : null,
       });
+      updateJogVisualState(j, side);
+      setInfoJogVisual(info, buildJogVisualSnapshot(side, j, info, Number(now()) || 0));
       return;
     }
 
@@ -1900,7 +2089,7 @@ export function installJogRuntime({
     });
 
     if (!j.el) resolveJogEls();
-    if (!j.el) return;
+    if (!j.el && !j.jogCutterOverlayEl) return;
 
     if (CFG.mode === 'absolute') {
       j.angle = (info.value ?? info.d2 ?? 0) * (360 / 127);
@@ -1910,14 +2099,14 @@ export function installJogRuntime({
       j.motionLane = j.inputLane;
       j.motionMode = 'absolute';
       applyRotation(j.el, j.angle);
-      updateJogVisualState(j);
+      updateJogVisualState(j, side);
       setInfoJogVisual(info, buildJogVisualSnapshot(side, j, info, Number(now()) || 0));
       info[JOG_EVENT_HANDLED_FLAG] = true;
       return;
     }
 
     if (CFG.mode === 'tape') {
-      handleJogMotion(j, motion);
+      handleJogMotion(side, j, motion);
       setInfoJogVisual(info, buildJogVisualSnapshot(side, j, info, Number(now()) || 0));
       info[JOG_EVENT_HANDLED_FLAG] = true;
     }

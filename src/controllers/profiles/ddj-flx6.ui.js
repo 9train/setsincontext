@@ -79,6 +79,18 @@ function buildDeckStateRenderTargets(side, sideLabel) {
   });
 }
 
+function buildJogCutterRenderTargets(side, sideLabel) {
+  return Object.freeze({
+    [`deck.${sideLabel}.jog.cutter_overlay`]: `jog_cutter_overlay_${side}`,
+    ...Object.fromEntries(
+      Array.from({ length: 6 }, (_, index) => {
+        const zone = index + 1;
+        return [`deck.${sideLabel}.jog.cutter_zone.${zone}`, `jog_cutter_zone_${side}_${zone}`];
+      }),
+    ),
+  });
+}
+
 function buildRenderTargetsFromEditorTargets(targets = []) {
   return Object.fromEntries(
     targets
@@ -133,6 +145,8 @@ const flx6RenderTargets = Object.freeze({
   ...buildLoopCallRenderTargets('R', 'right'),
   ...buildDeckStateRenderTargets('L', 'left'),
   ...buildDeckStateRenderTargets('R', 'right'),
+  ...buildJogCutterRenderTargets('L', 'left'),
+  ...buildJogCutterRenderTargets('R', 'right'),
   ...buildPadModeRenderTargets('L', 'left'),
   ...buildPadModeRenderTargets('R', 'right'),
   ...buildPadRenderTargets('L', 'left'),
@@ -442,6 +456,21 @@ function buildDeckTargets(side, sideLabel) {
       label: `${deckLabel} Vinyl State`,
       renderKind: 'deck-state',
     },
+    {
+      targetId: `jog_cutter_overlay_${side}`,
+      canonicalTarget: `deck.${sideLabel}.jog.cutter_overlay`,
+      label: `${deckLabel} Jog Cutter Overlay`,
+      renderKind: 'jog-cutter-overlay',
+    },
+    ...Array.from({ length: 6 }, (_, index) => {
+      const zone = index + 1;
+      return {
+        targetId: `jog_cutter_zone_${side}_${zone}`,
+        canonicalTarget: `deck.${sideLabel}.jog.cutter_zone.${zone}`,
+        label: `${deckLabel} Jog Cutter Zone ${zone}`,
+        renderKind: 'jog-cutter-zone',
+      };
+    }),
     ...flx6PadModeTargets.map((target) => ({
       targetId: `${target.targetPrefix}_${side}`,
       canonicalTarget: `deck.${sideLabel}.pad_mode.${target.mode}`,

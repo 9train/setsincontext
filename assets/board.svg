@@ -1235,6 +1235,120 @@
          r="115"
          style="display:inline;fill:#0f1423;stroke:#33406b;stroke-width:2px"
          inkscape:label="jog_R_touch" />
+         <g
+   id="jog_cutter_overlay_R"
+   class="jog-cutter-overlay"
+   inkscape:label="jog_cutter_overlay_R"
+   style="pointer-events:none">
+
+  <path
+     id="jog_cutter_zone_R_1"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_R_1"
+     data-jog-cutter-zone="1"
+     d="M 224.017,105.975 A 151.202,151.202 0 0 1 361.306,105.975 L 344.870,138.231 A 115.000,115.000 0 0 0 240.453,138.231 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_R_2"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_R_2"
+     data-jog-cutter-zone="2"
+     d="M 375.012,113.888 A 151.202,151.202 0 0 1 443.657,232.784 L 407.504,234.678 A 115.000,115.000 0 0 0 355.295,144.250 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_R_3"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_R_3"
+     data-jog-cutter-zone="3"
+     d="M 443.657,248.610 A 151.202,151.202 0 0 1 375.012,367.506 L 355.295,337.144 A 115.000,115.000 0 0 0 407.504,246.716 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_R_4"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_R_4"
+     data-jog-cutter-zone="4"
+     d="M 361.306,375.419 A 151.202,151.202 0 0 1 224.017,375.419 L 240.453,343.163 A 115.000,115.000 0 0 0 344.870,343.163 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_R_5"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_R_5"
+     data-jog-cutter-zone="5"
+     d="M 210.311,367.506 A 151.202,151.202 0 0 1 141.666,248.610 L 177.819,246.716 A 115.000,115.000 0 0 0 230.028,337.144 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_R_6"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_R_6"
+     data-jog-cutter-zone="6"
+     d="M 141.666,232.784 A 151.202,151.202 0 0 1 210.311,113.888 L 230.028,144.250 A 115.000,115.000 0 0 0 177.819,234.678 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <text
+     id="jog_cutter_label_R_1"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_R_1"
+     x="292.662"
+     y="107.596"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">1</text>
+
+  <text
+     id="jog_cutter_label_R_2"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_R_2"
+     x="407.931"
+     y="174.146"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">2</text>
+
+  <text
+     id="jog_cutter_label_R_3"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_R_3"
+     x="407.931"
+     y="307.248"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">3</text>
+
+  <text
+     id="jog_cutter_label_R_4"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_R_4"
+     x="292.662"
+     y="373.798"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">4</text>
+
+  <text
+     id="jog_cutter_label_R_5"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_R_5"
+     x="177.393"
+     y="307.248"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">5</text>
+
+  <text
+     id="jog_cutter_label_R_6"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_R_6"
+     x="177.393"
+     y="174.146"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">6</text>
+</g>
     </g>
     <g
        id="g145-5"
@@ -2027,6 +2141,120 @@
          r="115"
          style="display:inline"
          inkscape:label="jog_L_touch" />
+         <g
+   id="jog_cutter_overlay_L"
+   class="jog-cutter-overlay"
+   inkscape:label="jog_cutter_overlay_L"
+   style="pointer-events:none">
+
+  <path
+     id="jog_cutter_zone_L_1"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_L_1"
+     data-jog-cutter-zone="1"
+     d="M 224.017,105.975 A 151.202,151.202 0 0 1 361.306,105.975 L 344.870,138.231 A 115.000,115.000 0 0 0 240.453,138.231 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_L_2"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_L_2"
+     data-jog-cutter-zone="2"
+     d="M 375.012,113.888 A 151.202,151.202 0 0 1 443.657,232.784 L 407.504,234.678 A 115.000,115.000 0 0 0 355.295,144.250 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_L_3"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_L_3"
+     data-jog-cutter-zone="3"
+     d="M 443.657,248.610 A 151.202,151.202 0 0 1 375.012,367.506 L 355.295,337.144 A 115.000,115.000 0 0 0 407.504,246.716 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_L_4"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_L_4"
+     data-jog-cutter-zone="4"
+     d="M 361.306,375.419 A 151.202,151.202 0 0 1 224.017,375.419 L 240.453,343.163 A 115.000,115.000 0 0 0 344.870,343.163 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_L_5"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_L_5"
+     data-jog-cutter-zone="5"
+     d="M 210.311,367.506 A 151.202,151.202 0 0 1 141.666,248.610 L 177.819,246.716 A 115.000,115.000 0 0 0 230.028,337.144 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <path
+     id="jog_cutter_zone_L_6"
+     class="jog-cutter-zone"
+     inkscape:label="jog_cutter_zone_L_6"
+     data-jog-cutter-zone="6"
+     d="M 141.666,232.784 A 151.202,151.202 0 0 1 210.311,113.888 L 230.028,144.250 A 115.000,115.000 0 0 0 177.819,234.678 Z"
+     style="fill:#1b2133;fill-opacity:1;stroke:#33406b;stroke-width:2;stroke-linejoin:round;stroke-opacity:1" />
+
+  <text
+     id="jog_cutter_label_L_1"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_L_1"
+     x="292.662"
+     y="107.596"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">1</text>
+
+  <text
+     id="jog_cutter_label_L_2"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_L_2"
+     x="407.931"
+     y="174.146"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">2</text>
+
+  <text
+     id="jog_cutter_label_L_3"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_L_3"
+     x="407.931"
+     y="307.248"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">3</text>
+
+  <text
+     id="jog_cutter_label_L_4"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_L_4"
+     x="292.662"
+     y="373.798"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">4</text>
+
+  <text
+     id="jog_cutter_label_L_5"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_L_5"
+     x="177.393"
+     y="307.248"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">5</text>
+
+  <text
+     id="jog_cutter_label_L_6"
+     class="jog-cutter-label"
+     inkscape:label="jog_cutter_label_L_6"
+     x="177.393"
+     y="174.146"
+     text-anchor="middle"
+     dominant-baseline="middle"
+     style="font-family:Arial,sans-serif;font-size:28px;fill:#ffffff;stroke:none">6</text>
+</g>
     </g>
     <g
        id="g145"

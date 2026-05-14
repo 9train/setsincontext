@@ -544,6 +544,38 @@ body.host #boardHost svg {
   filter: drop-shadow(0 0 6px var(--lit)) drop-shadow(0 0 16px var(--lit)) drop-shadow(0 0 28px rgba(156, 216, 255, 0.2));
 }
 
+#boardHost svg .jog-cutter-overlay {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+#boardHost svg .jog-cutter-overlay.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+#boardHost svg .jog-cutter-zone {
+  opacity: 0.28;
+  transition: opacity 90ms ease, filter 90ms ease;
+}
+
+#boardHost svg .jog-cutter-label {
+  opacity: 0.34;
+  transition: opacity 90ms ease, filter 90ms ease;
+}
+
+#boardHost svg .jog-cutter-zone.is-lit,
+#boardHost svg .jog-cutter-label.is-lit {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px var(--lit)) drop-shadow(0 0 14px rgba(156, 216, 255, 0.34));
+}
+
+#boardHost svg .jog-cutter-zone.is-current {
+  filter: drop-shadow(0 0 7px var(--lit)) drop-shadow(0 0 20px rgba(156, 216, 255, 0.42));
+}
+
 [id^="trim_"],
 [id^="hi_"],
 [id^="mid_"],

@@ -15,6 +15,16 @@ test('profile-owned render targets resolve canonical board surfaces', () => {
   assert.equal(resolveProfileRenderTarget('deck.right.jog.cutter'), 'jogcut_R');
   assert.equal(resolveProfileRenderTarget('deck.left.jog.vinyl_mode'), 'jogcut_L');
   assert.equal(resolveProfileRenderTarget('deck.right.jog.vinyl_mode'), 'jogcut_R');
+  assert.equal(resolveProfileRenderTarget('deck.left.jog.cutter_overlay'), 'jog_cutter_overlay_L');
+  assert.equal(resolveProfileRenderTarget('deck.right.jog.cutter_overlay'), 'jog_cutter_overlay_R');
+  assert.equal(resolveProfileRenderTarget('deck.left.jog.cutter_zone.1'), 'jog_cutter_zone_L_1');
+  assert.equal(resolveProfileRenderTarget('deck.left.jog.cutter_zone.6'), 'jog_cutter_zone_L_6');
+  assert.equal(resolveProfileRenderTarget('deck.right.jog.cutter_zone.1'), 'jog_cutter_zone_R_1');
+  assert.equal(resolveProfileRenderTarget('deck.right.jog.cutter_zone.6'), 'jog_cutter_zone_R_6');
+  for (let zone = 1; zone <= 6; zone += 1) {
+    assert.equal(resolveProfileRenderTarget(`deck.left.jog.cutter_zone.${zone}`), `jog_cutter_zone_L_${zone}`);
+    assert.equal(resolveProfileRenderTarget(`deck.right.jog.cutter_zone.${zone}`), `jog_cutter_zone_R_${zone}`);
+  }
   assert.equal(resolveProfileRenderTarget('deck.left.state.normal'), 'deck_layer_main_L');
   assert.equal(resolveProfileRenderTarget('deck.left.state.jog_cutter'), 'deck_layer_alt_L');
   assert.equal(resolveProfileRenderTarget('deck.left.state.vinyl'), 'vinyl_L');
@@ -115,6 +125,25 @@ test('profile-owned editor targets expose persistent FLX6 deck-state indicators'
     assert.equal(canonicalEditorTarget.owner, 'profile');
     assert.equal(canonicalEditorTarget.targetId, targetId);
     assert.equal(canonicalEditorTarget.canonicalTarget, canonicalTarget);
+  }
+});
+
+test('profile-owned editor targets expose Jog Cutter overlay sections', () => {
+  const overlay = resolveProfileEditorTarget('jog_cutter_overlay_L');
+  assert.equal(overlay.owner, 'profile');
+  assert.equal(overlay.targetId, 'jog_cutter_overlay_L');
+  assert.equal(overlay.canonicalTarget, 'deck.left.jog.cutter_overlay');
+  assert.equal(overlay.renderKind, 'jog-cutter-overlay');
+
+  for (const side of ['left', 'right']) {
+    const suffix = side === 'left' ? 'L' : 'R';
+    for (let zone = 1; zone <= 6; zone += 1) {
+      const target = resolveProfileEditorTarget(`jog_cutter_zone_${suffix}_${zone}`);
+      assert.equal(target.owner, 'profile');
+      assert.equal(target.targetId, `jog_cutter_zone_${suffix}_${zone}`);
+      assert.equal(target.canonicalTarget, `deck.${side}.jog.cutter_zone.${zone}`);
+      assert.equal(target.renderKind, 'jog-cutter-zone');
+    }
   }
 });
 

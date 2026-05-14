@@ -129,6 +129,47 @@ function createTouchEvent({
   };
 }
 
+function createJogCutterButtonEvent({
+  side = 'left',
+  active = true,
+  enabled = true,
+  vinylMode,
+  timestamp = 1000,
+} = {}) {
+  const ch = side === 'left' ? 1 : 2;
+  const interaction = active ? 'noteon' : 'noteoff';
+  const sideStateKey = side;
+  const controllerState = {
+    jogCutter: { [sideStateKey]: enabled },
+  };
+  if (typeof vinylMode === 'boolean') {
+    controllerState.jogVinylMode = { [sideStateKey]: vinylMode };
+  }
+  return {
+    eventType: 'normalized_input',
+    canonicalTarget: `deck.${side}.jog.cutter`,
+    mappingId: `deck.${side}.jog.cutter.main.${active ? 'press' : 'release'}`,
+    interaction,
+    type: interaction,
+    ch,
+    d1: 28,
+    d2: active ? 127 : 0,
+    value: active ? 127 : 0,
+    context: { deckLayer: 'main' },
+    controllerState,
+    timestamp,
+  };
+}
+
+function jogCutterElementIds(side = 'L') {
+  return [
+    `jog_${side}`,
+    `jog_cutter_overlay_${side}`,
+    ...Array.from({ length: 6 }, (_, index) => `jog_cutter_zone_${side}_${index + 1}`),
+    ...Array.from({ length: 6 }, (_, index) => `jog_cutter_label_${side}_${index + 1}`),
+  ];
+}
+
 function createAuthoritativeJogVisual(overrides = {}) {
   return merge({
     side: 'L',
@@ -261,6 +302,192 @@ test('touch events visibly toggle the jog touch state without rotating the platt
     assert.equal(env.elements.jog_L.dataset.jogLane, 'idle');
     assert.equal(env.elements.jog_L.style.filter, undefined);
     assert.equal(env.elements.jog_L.classList.contains('jog-touch-active'), false);
+  } finally {
+    env.restore();
+  }
+});
+
+test('Jog Cutter overlay is hidden by default and appears while Jog Cutter is enabled', () => {
+  const env = installMockBrowser({ elementIds: jogCutterElementIds('L') });
+  installJogRuntime({ getUnifiedMap: () => [] });
+
+  try {
+    assert.equal(env.elements.jog_cutter_overlay_L.classList.contains('is-visible'), false);
+    assert.equal(env.elements.jog_cutter_overlay_L.style.display, 'none');
+
+    env.window.consumeInfo(createJogCutterButtonEvent({ side: 'left', enabled: true }));
+
+    assert.equal(env.elements.jog_cutter_overlay_L.classList.contains('is-visible'), true);
+    assert.equal(env.elements.jog_cutter_overlay_L.style.display, '');
+    assert.equal(env.elements.jog_cutter_zone_L_1.classList.contains('is-lit'), false);
+  } finally {
+    env.restore();
+  }
+});
+
+test('Jog Cutter button release leaves the overlay visible', () => {
+  const env = installMockBrowser({ elementIds: jogCutterElementIds('L') });
+  installJogRuntime({ getUnifiedMap: () => [] });
+
+  try {
+    env.window.consumeInfo(createJogCutterButtonEvent({ side: 'left', active: true, enabled: true }));
+    env.window.consumeInfo(createJogCutterButtonEvent({ side: 'left', active: false, enabled: true, timestamp: 1001 }));
+
+    assert.equal(env.elements.jog_cutter_overlay_L.classList.contains('is-visible'), true);
+    assert.equal(env.elements.jog_cutter_overlay_L.style.display, '');
+  } finally {
+    env.restore();
+  }
+});
+
+test('top touch while Jog Cutter is enabled lights the current section', () => {
+  const env = installMockBrowser({ elementIds: jogCutterElementIds('L') });
+  installJogRuntime({ getUnifiedMap: () => [] });
+
+  try {
+    env.window.consumeInfo(createJogCutterButtonEvent({ side: 'left', enabled: true }));
+    env.window.consumeInfo(createTouchEvent({
+      side: 'left',
+      active: true,
+      timestamp: 1001,
+      controllerState: {
+        jogTouch: { left: true },
+        jogCutter: { left: true },
+      },
+    }));
+
+    assert.equal(env.elements.jog_cutter_zone_L_1.classList.contains('is-lit'), true);
+    assert.equal(env.elements.jog_cutter_zone_L_1.classList.contains('is-current'), true);
+    assert.equal(env.elements.jog_cutter_label_L_1.classList.contains('is-lit'), true);
+  } finally {
+    env.restore();
+  }
+});
+
+test('Jog Cutter motion advances zones without rotating the jog visual', async () => {
+  const env = installMockBrowser({ elementIds: jogCutterElementIds('L') });
+  installJogRuntime({ getUnifiedMap: () => [] }).setMode('tape');
+
+  try {
+    env.window.consumeInfo(createJogCutterButtonEvent({ side: 'left', enabled: true }));
+    env.window.consumeInfo(createTouchEvent({
+      side: 'left',
+      active: true,
+      timestamp: 1001,
+      controllerState: {
+        jogTouch: { left: true },
+        jogCutter: { left: true },
+      },
+    }));
+    const motion = createRelativeMotionEvent({
+      side: 'left',
+      delta: 6,
+      controller: 34,
+      mappingId: 'deck.left.jog.motion.secondary',
+      timestamp: 1002,
+      controllerState: {
+        jogTouch: { left: true },
+        jogCutter: { left: true },
+        jogLane: { left: 'platter_vinyl_on' },
+      },
+    });
+    env.window.consumeInfo(motion);
+    await env.runAnimationFrames(1);
+
+    assert.equal(env.elements.jog_cutter_zone_L_1.classList.contains('is-lit'), true);
+    assert.equal(env.elements.jog_cutter_zone_L_2.classList.contains('is-lit'), true);
+    assert.equal(env.elements.jog_cutter_zone_L_2.classList.contains('is-current'), true);
+    assert.equal(parseAngle(env.elements.jog_L.style.transform), null);
+    assert.equal(motion.render.jogVisual.lane, 'jog_cutter');
+    assert.equal(motion.render.jogVisual.jogCutter.currentZone, 2);
+    assert.deepEqual(motion.render.jogVisual.jogCutter.litZones, [1, 2]);
+  } finally {
+    env.restore();
+  }
+});
+
+test('Jog Cutter lit trail survives top-touch release and clears when Jog Cutter turns off', () => {
+  const env = installMockBrowser({ elementIds: jogCutterElementIds('L') });
+  installJogRuntime({ getUnifiedMap: () => [] }).setMode('tape');
+
+  try {
+    env.window.consumeInfo(createJogCutterButtonEvent({ side: 'left', enabled: true }));
+    env.window.consumeInfo(createTouchEvent({
+      side: 'left',
+      active: true,
+      timestamp: 1001,
+      controllerState: {
+        jogTouch: { left: true },
+        jogCutter: { left: true },
+      },
+    }));
+    env.window.consumeInfo(createRelativeMotionEvent({
+      side: 'left',
+      delta: 6,
+      controller: 34,
+      mappingId: 'deck.left.jog.motion.secondary',
+      timestamp: 1002,
+      controllerState: {
+        jogTouch: { left: true },
+        jogCutter: { left: true },
+        jogLane: { left: 'platter_vinyl_on' },
+      },
+    }));
+    env.window.consumeInfo(createTouchEvent({
+      side: 'left',
+      active: false,
+      timestamp: 1003,
+      controllerState: {
+        jogTouch: { left: false },
+        jogCutter: { left: true },
+      },
+    }));
+
+    assert.equal(env.elements.jog_cutter_overlay_L.classList.contains('is-visible'), true);
+    assert.equal(env.elements.jog_cutter_zone_L_1.classList.contains('is-lit'), true);
+    assert.equal(env.elements.jog_cutter_zone_L_2.classList.contains('is-lit'), true);
+
+    env.window.consumeInfo(createJogCutterButtonEvent({
+      side: 'left',
+      active: true,
+      enabled: false,
+      timestamp: 1004,
+    }));
+
+    assert.equal(env.elements.jog_cutter_overlay_L.classList.contains('is-visible'), false);
+    assert.equal(env.elements.jog_cutter_overlay_L.style.display, 'none');
+    assert.equal(env.elements.jog_cutter_zone_L_1.classList.contains('is-lit'), false);
+    assert.equal(env.elements.jog_cutter_zone_L_2.classList.contains('is-lit'), false);
+  } finally {
+    env.restore();
+  }
+});
+
+test('Jog Cutter overlay state does not overwrite vinyl truth', () => {
+  const env = installMockBrowser({ elementIds: jogCutterElementIds('L') });
+  const jog = installJogRuntime({ getUnifiedMap: () => [] });
+
+  try {
+    env.window.consumeInfo(createJogCutterButtonEvent({
+      side: 'left',
+      enabled: true,
+      vinylMode: true,
+    }));
+
+    assert.equal(env.elements.jog_cutter_overlay_L.classList.contains('is-visible'), true);
+    assert.equal(jog.getState().L.jogCutterActive, true);
+    assert.equal(jog.getState().L.jogVinylMode, true);
+
+    env.window.consumeInfo(createJogCutterButtonEvent({
+      side: 'left',
+      enabled: false,
+      vinylMode: true,
+      timestamp: 1001,
+    }));
+
+    assert.equal(env.elements.jog_cutter_overlay_L.classList.contains('is-visible'), false);
+    assert.equal(jog.getState().L.jogCutterActive, false);
+    assert.equal(jog.getState().L.jogVinylMode, true);
   } finally {
     env.restore();
   }
@@ -444,7 +671,7 @@ test('touch-active platter motion selects the configured scratch profile instead
   }
 });
 
-test('touch-active motion can select the configured jog_cutter profile when controller truth knows cutter is enabled', async () => {
+test('touch-active motion can select jog_cutter without rotating the jog visual', async () => {
   const env = installMockBrowser({ elementIds: ['jog_L'] });
   env.window.__MIDI_FEEL__ = { FEEL_CFG: createJogFeelConfig() };
   installJogRuntime({ getUnifiedMap: () => [] }).setMode('tape');
@@ -465,9 +692,11 @@ test('touch-active motion can select the configured jog_cutter profile when cont
     env.window.consumeInfo(info);
     await env.runAnimationFrames(1);
 
-    assertClose(parseAngle(env.elements.jog_L.style.transform), 0.99);
+    assert.equal(parseAngle(env.elements.jog_L.style.transform), null);
     assert.equal(info.render.jogVisual.lane, 'jog_cutter');
     assert.equal(info.render.jogVisual.motionMode, 'jog_cutter');
+    assert.equal(info.render.jogVisual.angle, 0);
+    assert.equal(info.render.jogVisual.vel, 0);
     assert.equal(env.elements.jog_L.dataset.jogLane, 'jog_cutter');
     assert.equal(env.elements.jog_L.dataset.jogScratchActive, 'true');
   } finally {
@@ -1352,7 +1581,7 @@ test('saved calibration routes jog motion by side, mode, and surface without cha
           jogLane: { left: 'platter_vinyl_on' },
         },
       }),
-      expectedAngle: 8,
+      expectedAngle: 0,
       expectedLane: 'jog_cutter',
       expectedMode: 'jog_cutter',
     },
@@ -1595,7 +1824,7 @@ test('viewer authoritative jogVisual events are not recorded as physical calibra
   }
 });
 
-test('host-authored render.jogVisual snapshots reflect the resolved lane profile instead of the raw platter lane', () => {
+test('host-authored render.jogVisual snapshots reflect Jog Cutter overlay state without jog rotation', () => {
   const env = installMockBrowser({ elementIds: ['jog_L'] });
   env.window.__MIDI_FEEL__ = { FEEL_CFG: createJogFeelConfig() };
   installJogRuntime({ getUnifiedMap: () => [] }).setMode('tape');
@@ -1617,8 +1846,8 @@ test('host-authored render.jogVisual snapshots reflect the resolved lane profile
 
     assert.deepEqual(info.render.jogVisual, {
       side: 'L',
-      angle: 0.99,
-      vel: 0.01,
+      angle: 0,
+      vel: 0,
       damping: 0.25,
       lane: 'jog_cutter',
       motionMode: 'jog_cutter',
@@ -1626,6 +1855,11 @@ test('host-authored render.jogVisual snapshots reflect the resolved lane profile
       touchLane: 'touch',
       authoredAt: 1000,
       frameMs: 16,
+      jogCutter: {
+        active: true,
+        currentZone: 1,
+        litZones: [1],
+      },
     });
   } finally {
     env.restore();
